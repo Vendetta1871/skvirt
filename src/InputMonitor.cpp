@@ -3,7 +3,10 @@
 #include <QSocketNotifier>
 #include <QDir>
 #include <QDebug>
+#include <QFileSystemWatcher>
+#include <QTimer>
 
+#include <cerrno>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -27,6 +30,13 @@ struct BitArray { unsigned long v[(Max + kBitsPerLong - 1) / kBitsPerLong] = {0}
 InputMonitor::InputMonitor(QObject *parent) : QObject(parent)
 {
     openDevices();
+
+    // Pick up hotplugged (or resume-recreated) devices. udev may not have set
+    // group permissions the instant the node appears, so rescan after a delay.
+    auto *watcher = new QFileSystemWatcher({"/dev/input"}, this);
+    connect(watcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
+        QTimer::singleShot(1000, this, &InputMonitor::openDevices);
+    });
 }
 
 InputMonitor::~InputMonitor()
@@ -45,54 +55,88 @@ void InputMonitor::openDevices()
     const QStringList nodes = dir.entryList({"event*"}, QDir::System, QDir::Name);
 
     for (const QString &name : nodes) {
-        const QByteArray path = dir.absoluteFilePath(name).toLocal8Bit();
-        int fd = ::open(path.constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        if (fd < 0)
-            continue;  // permission denied / busy — skip quietly
-
-        BitArray<INPUT_PROP_CNT> props;
-        BitArray<EV_CNT> evs;
-        BitArray<ABS_CNT> abs;
-        ioctl(fd, EVIOCGPROP(sizeof props.v), props.v);
-        ioctl(fd, EVIOCGBIT(0, sizeof evs.v), evs.v);
-
-        const bool direct  = testBit(props.v, INPUT_PROP_DIRECT);
-        const bool pointer = testBit(props.v, INPUT_PROP_POINTER);
-        const bool hasRel  = testBit(evs.v, EV_REL);
-        bool hasAbsX = false, hasAbsMT = false;
-        if (testBit(evs.v, EV_ABS)) {
-            ioctl(fd, EVIOCGBIT(EV_ABS, sizeof abs.v), abs.v);
-            hasAbsX  = testBit(abs.v, ABS_X);
-            hasAbsMT = testBit(abs.v, ABS_MT_POSITION_X);
-        }
-
-        Kind kind = Ignore;
-        if (direct && (hasAbsMT || hasAbsX))
-            kind = Touch;            // touchscreen / pen digitizer
-        else if (pointer || hasRel)
-            kind = Pointer;          // mouse, touchpad, trackpoint
-
-        if (kind == Ignore) {
-            ::close(fd);
-            continue;
-        }
-
-        auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
-        connect(notifier, &QSocketNotifier::activated, this,
-                [this, fd, kind]() { onReadable(fd, kind); });
-        m_devs.push_back({fd, kind, notifier});
-        if (kind == Touch)
-            m_hasTouch = true;
-
-        char nameBuf[256] = {0};
-        ioctl(fd, EVIOCGNAME(sizeof nameBuf), nameBuf);
-        qDebug() << "skvirt: monitoring" << path
-                 << (kind == Touch ? "[touch]" : "[pointer]") << nameBuf;
+        const QString path = dir.absoluteFilePath(name);
+        if (!isMonitored(path))
+            openDevice(path);
     }
 
     if (!m_hasTouch)
         qWarning() << "skvirt: no readable touchscreen found — touch auto-show "
                       "disabled (is the user in the 'input' group?)";
+}
+
+bool InputMonitor::isMonitored(const QString &path) const
+{
+    for (const Dev &d : m_devs)
+        if (d.path == path)
+            return true;
+    return false;
+}
+
+bool InputMonitor::openDevice(const QString &path)
+{
+    const QByteArray p = path.toLocal8Bit();
+    int fd = ::open(p.constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0)
+        return false;  // permission denied / busy — skip quietly
+
+    BitArray<INPUT_PROP_CNT> props;
+    BitArray<EV_CNT> evs;
+    BitArray<ABS_CNT> abs;
+    ioctl(fd, EVIOCGPROP(sizeof props.v), props.v);
+    ioctl(fd, EVIOCGBIT(0, sizeof evs.v), evs.v);
+
+    const bool direct  = testBit(props.v, INPUT_PROP_DIRECT);
+    const bool pointer = testBit(props.v, INPUT_PROP_POINTER);
+    const bool hasRel  = testBit(evs.v, EV_REL);
+    bool hasAbsX = false, hasAbsMT = false;
+    if (testBit(evs.v, EV_ABS)) {
+        ioctl(fd, EVIOCGBIT(EV_ABS, sizeof abs.v), abs.v);
+        hasAbsX  = testBit(abs.v, ABS_X);
+        hasAbsMT = testBit(abs.v, ABS_MT_POSITION_X);
+    }
+
+    Kind kind = Ignore;
+    if (direct && (hasAbsMT || hasAbsX))
+        kind = Touch;            // touchscreen / pen digitizer
+    else if (pointer || hasRel)
+        kind = Pointer;          // mouse, touchpad, trackpoint
+
+    if (kind == Ignore) {
+        ::close(fd);
+        return false;
+    }
+
+    auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+    connect(notifier, &QSocketNotifier::activated, this,
+            [this, fd, kind]() { onReadable(fd, kind); });
+    m_devs.push_back({fd, kind, notifier, path});
+    if (kind == Touch)
+        m_hasTouch = true;
+
+    char nameBuf[256] = {0};
+    ioctl(fd, EVIOCGNAME(sizeof nameBuf), nameBuf);
+    qDebug() << "skvirt: monitoring" << path
+             << (kind == Touch ? "[touch]" : "[pointer]") << nameBuf;
+    return true;
+}
+
+void InputMonitor::closeDevice(int fd)
+{
+    for (auto it = m_devs.begin(); it != m_devs.end(); ++it) {
+        if (it->fd != fd)
+            continue;
+        qDebug() << "skvirt: device gone, closing" << it->path;
+        it->notifier->setEnabled(false);
+        it->notifier->deleteLater();
+        ::close(it->fd);
+        m_devs.erase(it);
+        break;
+    }
+    m_hasTouch = false;
+    for (const Dev &d : m_devs)
+        if (d.kind == Touch)
+            m_hasTouch = true;
 }
 
 void InputMonitor::onReadable(int fd, Kind kind)
@@ -102,8 +146,21 @@ void InputMonitor::onReadable(int fd, Kind kind)
 
     for (;;) {
         ssize_t n = ::read(fd, evs, sizeof evs);
-        if (n <= 0)
-            break;
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                break;  // drained
+            // ENODEV etc.: device unplugged/reset. Close it now — a dead fd
+            // left in the poll set reports POLLERR forever and the notifier
+            // busy-loops a whole core.
+            closeDevice(fd);
+            return;
+        }
+        if (n == 0) {
+            closeDevice(fd);
+            return;
+        }
         const int count = n / sizeof(input_event);
         for (int i = 0; i < count; ++i) {
             const input_event &e = evs[i];

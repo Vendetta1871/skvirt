@@ -2,12 +2,12 @@
 
 #include <QObject>
 
-// Tracks KWin's view of whether the currently focused client accepts text
-// input, via org.kde.kwin.VirtualKeyboard. KWin cannot show fcitx's virtual
+// Tracks KWin's view of whether a text field is focused, via the `active`
+// property of org.kde.kwin.VirtualKeyboard (true while the focused app has
+// text input enabled on an editable). KWin cannot show fcitx's virtual
 // keyboard itself (fcitx renders through skvirt over D-Bus, not through a
-// KWin input-panel surface), but it does reliably report *when* an editable
-// client is focused — which is exactly the "there is a field to type into"
-// signal skvirt needs to decide auto show/hide.
+// KWin input-panel surface), but it does reliably report *when* there is a
+// field to type into — exactly the signal skvirt needs for auto show/hide.
 class KWinVk : public QObject
 {
     Q_OBJECT

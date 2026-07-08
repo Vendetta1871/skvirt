@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QString>
 #include <QVector>
 
 class QSocketNotifier;
@@ -28,10 +29,13 @@ signals:
 
 private:
     enum Kind { Ignore, Touch, Pointer };
-    struct Dev { int fd; Kind kind; QSocketNotifier *notifier; };
+    struct Dev { int fd; Kind kind; QSocketNotifier *notifier; QString path; };
 
     void openDevices();
+    bool openDevice(const QString &path);
+    void closeDevice(int fd);
     void onReadable(int fd, Kind kind);
+    bool isMonitored(const QString &path) const;
 
     QVector<Dev> m_devs;
     bool m_hasTouch = false;

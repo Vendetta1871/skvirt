@@ -13,13 +13,10 @@ KWinVk::KWinVk(QObject *parent) : QObject(parent)
 {
     auto bus = QDBusConnection::sessionBus();
 
-    // KWin emits argument-less change signals on the interface; re-read the
-    // property whenever focus/activation state may have changed.
-    for (const char *sig : {"activeClientSupportsTextInputChanged",
-                            "activeChanged"}) {
-        bus.connect(kService, kPath, kIface, sig,
-                    this, SLOT(refresh()));
-    }
+    // KWin emits an argument-less change signal on the interface; re-read the
+    // property whenever activation state may have changed.
+    bus.connect(kService, kPath, kIface, "activeChanged",
+                this, SLOT(refresh()));
 
     refresh();
 }
@@ -28,12 +25,16 @@ void KWinVk::refresh()
 {
     QDBusInterface iface(kService, kPath, kIface,
                          QDBusConnection::sessionBus());
-    // Whether the focused window accepts text input. We deliberately do NOT
-    // gate on the `active` property: KWin flips it to false the moment our own
-    // layer-shell keyboard maps, which would hide us immediately. This one
-    // tracks the app being typed into and is stable across our show/hide.
-    const bool focused =
-        iface.property("activeClientSupportsTextInput").toBool();
+    // `active` flips when the focused app enables/disables text input on an
+    // actual editable (text-input-v3 enable), i.e. the caret is in a field.
+    // Not `activeClientSupportsTextInput` — that only says the client *bound*
+    // the text-input protocol, which is true for nearly every Qt/GTK window
+    // all the time, so gating on it pops the keyboard on any tap anywhere.
+    // Our window never takes focus (WindowDoesNotAcceptFocus + layer-shell
+    // KeyboardInteractivityNone), so mapping the keyboard does not flap it.
+    // Known limits: terminals keep text input enabled while focused (they are
+    // one big field), and XWayland/no-text-input clients never set it.
+    const bool focused = iface.property("active").toBool();
     if (focused == m_focused)
         return;
     m_focused = focused;
