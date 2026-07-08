@@ -1,9 +1,20 @@
 [Desktop Entry]
-Type=Application
-Name=skvirt
+Comment[en_US]=skvirt on-screen keyboard
 Comment=skvirt on-screen keyboard
 Exec=/home/sweetclit/Projects/skvirt/build/skvirt
+GenericName[en_US]=
+GenericName=
 Icon=input-keyboard-virtual
+MimeType=
+Name[en_US]=skvirt
+Name=skvirt
 NoDisplay=true
 OnlyShowIn=KDE
+Path=
+StartupNotify=false
+Terminal=false
+TerminalOptions=
+Type=Application
 X-KDE-StartupNotify=false
+X-KDE-SubstituteUID=false
+X-KDE-Username=
