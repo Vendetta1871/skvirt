@@ -64,6 +64,8 @@ Rectangle {
                 KeyboardController.toggleShift()
             else if (n === "symbols" || n === "abc")
                 KeyboardController.toggleSymbolMode()
+            else if (n === "lang")
+                KeyboardController.cycleLayout()
             else if (root.specialKeys.indexOf(n) !== -1)
                 KeyboardController.sendSpecial(n)
             else

@@ -27,11 +27,44 @@ Rectangle {
             ["b","b","B",1], ["n","n","N",1], ["m","m","M",1],
             ["backspace","⌫","",1.5]
         ],
-        // Row 3: Symbols / Space / Enter
+        // Row 3: Lang / Symbols / Space / Enter
         [
-            ["symbols","?123","",1.5],
-            [",",",","<",1], ["space","  space  ","",4], [".",".","!",1],
-            ["enter","↵","",1.5]
+            ["lang", KeyboardController.layoutLabel.toUpperCase(), "", 1],
+            ["symbols","?123","",1.3],
+            [",",",","<",1], ["space","  space  ","",3], [".",".","!",1],
+            ["enter","↵","",1.3]
+        ]
+    ]
+
+    // Russian (ЙЦУКЕН): same physical keys as rowsQwerty, Cyrillic legends.
+    readonly property var rowsRussian: [
+        // Row 0: Ё Й-Ъ
+        [
+            ["yo","ё","Ё",0.8],
+            ["q","й","Й",1], ["w","ц","Ц",1], ["e","у","У",1], ["r","к","К",1],
+            ["t","е","Е",1], ["y","н","Н",1], ["u","г","Г",1], ["i","ш","Ш",1],
+            ["o","щ","Щ",1], ["p","з","З",1], ["[","х","Х",1], ["]","ъ","Ъ",1]
+        ],
+        // Row 1: Ф-Э
+        [
+            ["a","ф","Ф",1], ["s","ы","Ы",1], ["d","в","В",1], ["f","а","А",1],
+            ["g","п","П",1], ["h","р","Р",1], ["j","о","О",1], ["k","л","Л",1],
+            ["l","д","Д",1], [";","ж","Ж",1], ["'","э","Э",1]
+        ],
+        // Row 2: Shift + Я-Ю + Backspace
+        [
+            ["shift", KeyboardController.capsLock ? "⇪" : KeyboardController.shiftActive ? "⇧" : "⇧", "", 1.5],
+            ["z","я","Я",1], ["x","ч","Ч",1], ["c","с","С",1], ["v","м","М",1],
+            ["b","и","И",1], ["n","т","Т",1], ["m","ь","Ь",1],
+            [",","б","Б",1], [".","ю","Ю",1],
+            ["backspace","⌫","",1.5]
+        ],
+        // Row 3: Lang / Symbols / Space / Enter
+        [
+            ["lang", KeyboardController.layoutLabel.toUpperCase(), "", 1],
+            ["symbols","?123","",1.3],
+            ["space","  space  ","",5],
+            ["enter","↵","",1.3]
         ]
     ]
 
@@ -57,7 +90,9 @@ Rectangle {
         ]
     ]
 
-    readonly property var currentRows: KeyboardController.symbolMode ? rowsSymbol : rowsQwerty
+    readonly property var currentRows: KeyboardController.symbolMode
+        ? rowsSymbol
+        : (KeyboardController.layout === "keyboard-ru" ? rowsRussian : rowsQwerty)
 
     // Key sizing
     readonly property real keyH: Math.round(root.height / 4.6)
@@ -109,6 +144,7 @@ Rectangle {
                                  || modelData[0] === "enter"
                                  || modelData[0] === "symbols"
                                  || modelData[0] === "abc"
+                                 || modelData[0] === "lang"
 
                         // Highlight shift key when active
                         color: {

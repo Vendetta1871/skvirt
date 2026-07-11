@@ -2,6 +2,7 @@
 #include "UinputKeyboard.h"
 #include "InputMonitor.h"
 #include "KWinVk.h"
+#include "FcitxIm.h"
 
 #include <QHash>
 #include <QDebug>
@@ -21,6 +22,12 @@ static bool physKeyForChar(QChar ch, PhysKey &out)
             int i = 0;
             for (int code : codes) t[QChar(chars[i++])] = {code, shift};
         };
+        // Same as add(), but for non-ASCII alphabets that can't round-trip
+        // through a `const char*` literal.
+        auto addU = [&](const QString &chars, std::initializer_list<int> codes, bool shift) {
+            int i = 0;
+            for (int code : codes) t[chars.at(i++)] = {code, shift};
+        };
         // Letters: lowercase (no shift) and uppercase (shift), same evdev codes.
         const int lcode[] = {
             30,48,46,32,18,33,34,35,23,36,37,38,50,49,24,25,16,19,31,20,22,47,17,45,21,44};
@@ -34,6 +41,16 @@ static bool physKeyForChar(QChar ch, PhysKey &out)
         // Other punctuation (unshifted / shifted) on their keys.
         add("-=[]\\;'`,./", {12,13,26,27,43,39,40,41,51,52,53}, false);
         add("_+{}|:\"~<>?", {12,13,26,27,43,39,40,41,51,52,53}, true);
+        // Russian (ЙЦУКЕН): same evdev codes as the Latin keys in the same
+        // physical positions, since that's the standard Cyrillic mapping.
+        addU(QStringLiteral("йцукенгшщзхъ"), {16,17,18,19,20,21,22,23,24,25,26,27}, false);
+        addU(QStringLiteral("ЙЦУКЕНГШЩЗХЪ"), {16,17,18,19,20,21,22,23,24,25,26,27}, true);
+        addU(QStringLiteral("фывапролдже"), {30,31,32,33,34,35,36,37,38,39,40}, false);
+        addU(QStringLiteral("ФЫВАПРОЛДЖЭ"), {30,31,32,33,34,35,36,37,38,39,40}, true);
+        addU(QStringLiteral("ячсмитьбю"), {44,45,46,47,48,49,50,51,52}, false);
+        addU(QStringLiteral("ЯЧСМИТЬБЮ"), {44,45,46,47,48,49,50,51,52}, true);
+        t[QChar(u'ё')] = {41, false};
+        t[QChar(u'Ё')] = {41, true};
         return t;
     }();
     auto it = table.constFind(ch);
@@ -71,6 +88,13 @@ void KeyboardController::initBackend()
     m_kbd   = std::make_unique<UinputKeyboard>();
     m_input = std::make_unique<InputMonitor>();
     m_kwin  = std::make_unique<KWinVk>();
+    m_fcitx = std::make_unique<FcitxIm>();
+
+    // Reflect whatever IM fcitx5 is already active on, rather than assuming
+    // English.
+    m_layout = m_fcitx->currentIM();
+    m_layoutLabel = m_fcitx->shortLabel(m_layout);
+    emit layoutChanged();
 
     // skvirt owns its own visibility policy (touch → show, mouse/lost focus →
     // hide) and injects keys as a plain virtual keyboard. fcitx is never told
@@ -186,6 +210,21 @@ void KeyboardController::toggleSymbolMode()
 {
     m_symbolMode = !m_symbolMode;
     emit symbolModeChanged();
+}
+
+void KeyboardController::cycleLayout()
+{
+    if (!m_fcitx)
+        return;
+    const QStringList ims = m_fcitx->groupInputMethods();
+    if (ims.isEmpty())
+        return;
+    const int idx = ims.indexOf(m_layout);
+    const QString next = ims.at((idx + 1) % ims.size());
+    m_fcitx->setCurrentIM(next);
+    m_layout = next;
+    m_layoutLabel = m_fcitx->shortLabel(next);
+    emit layoutChanged();
 }
 
 void KeyboardController::hidePanel()

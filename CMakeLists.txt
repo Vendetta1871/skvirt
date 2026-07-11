@@ -14,6 +14,7 @@ qt6_add_executable(skvirt
     src/UinputKeyboard.cpp
     src/InputMonitor.cpp
     src/KWinVk.cpp
+    src/FcitxIm.cpp
 )
 
 target_include_directories(skvirt PRIVATE src)
