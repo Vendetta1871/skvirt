@@ -1,0 +1,18 @@
+{
+    "KPlugin": {
+        "Description": "On-screen keyboard settings",
+        "EnabledByDefault": true,
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "input-keyboard",
+        "Id": "kcm_skvirt",
+        "License": "GPL-3.0-or-later",
+        "Name": "skvirt",
+        "X-KDE-ParentApp": "systemsettings",
+        "X-KDE-Weight": 100
+    },
+    "OnlyShowIn": "KDE;",
+    "X-KDE-Keywords": "keyboard,onscreen,on-screen,virtual keyboard,tablet,touch,input devices,suggestions,numbers row",
+    "X-KDE-System-Settings-Parent-Category": "keyboard"
+}

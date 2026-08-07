@@ -78,7 +78,8 @@ FcitxIm::FcitxIm(QObject *parent) : QObject(parent)
     qDBusRegisterMetaType<QList<AvailableIMEntry>>();
 }
 
-QStringList FcitxIm::groupInputMethods() const
+// IM entries of the current group, or {} when fcitx5 is unreachable.
+static QList<GroupIMEntry> groupEntries()
 {
     QDBusInterface iface(kService, kPath, kIface, QDBusConnection::sessionBus());
 
@@ -95,12 +96,31 @@ QStringList FcitxIm::groupInputMethods() const
         return {};
     }
 
-    const auto entries = qdbus_cast<QList<GroupIMEntry>>(
+    return qdbus_cast<QList<GroupIMEntry>>(
         infoReply.arguments().at(1).value<QDBusArgument>());
+}
+
+QStringList FcitxIm::groupInputMethods() const
+{
+    const auto entries = groupEntries();
     QStringList ims;
     for (const GroupIMEntry &e : entries)
         ims << e.uniqueName;
     return ims;
+}
+
+QString FcitxIm::layoutForIM(const QString &uniqueName) const
+{
+    const auto entries = groupEntries();
+    for (const GroupIMEntry &e : entries) {
+        if (e.uniqueName == uniqueName && !e.layoutName.isEmpty())
+            return e.layoutName;
+    }
+    // keyboard-XX IMs default to the XX xkb layout when no override is set.
+    static const QString kPrefix = QStringLiteral("keyboard-");
+    if (uniqueName.startsWith(kPrefix))
+        return uniqueName.mid(kPrefix.size());
+    return {};
 }
 
 QString FcitxIm::currentIM() const

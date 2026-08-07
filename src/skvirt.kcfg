@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name="skvirtrc"/>
+    <group name="General">
+        <entry name="showOnlyInTabletMode" type="Bool">
+            <label>Show only in tablet mode</label>
+            <default>false</default>
+        </entry>
+        <entry name="hideOnMouseMove" type="Bool">
+            <label>Hide when mouse is moved</label>
+            <default>true</default>
+        </entry>
+        <entry name="showAutosuggestions" type="Bool">
+            <label>Show autosuggestions</label>
+            <default>true</default>
+        </entry>
+        <entry name="longPressSymbols" type="Bool">
+            <label>Show symbols on long press</label>
+            <default>true</default>
+        </entry>
+        <entry name="numbersRow" type="Bool">
+            <label>Numbers row</label>
+            <default>false</default>
+        </entry>
+    </group>
+</kcfg>

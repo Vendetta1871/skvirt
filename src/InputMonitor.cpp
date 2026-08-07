@@ -83,6 +83,7 @@ bool InputMonitor::openDevice(const QString &path)
     BitArray<INPUT_PROP_CNT> props;
     BitArray<EV_CNT> evs;
     BitArray<ABS_CNT> abs;
+    BitArray<SW_CNT> sw;
     ioctl(fd, EVIOCGPROP(sizeof props.v), props.v);
     ioctl(fd, EVIOCGBIT(0, sizeof evs.v), evs.v);
 
@@ -95,9 +96,16 @@ bool InputMonitor::openDevice(const QString &path)
         hasAbsX  = testBit(abs.v, ABS_X);
         hasAbsMT = testBit(abs.v, ABS_MT_POSITION_X);
     }
+    bool hasTabletSwitch = false;
+    if (testBit(evs.v, EV_SW)) {
+        ioctl(fd, EVIOCGBIT(EV_SW, sizeof sw.v), sw.v);
+        hasTabletSwitch = testBit(sw.v, SW_TABLET_MODE);
+    }
 
     Kind kind = Ignore;
-    if (direct && (hasAbsMT || hasAbsX))
+    if (hasTabletSwitch)
+        kind = Switch;           // e.g. "ThinkPad Extra Buttons" (SW_TABLET_MODE)
+    else if (direct && (hasAbsMT || hasAbsX))
         kind = Touch;            // touchscreen / pen digitizer
     else if (pointer || hasRel)
         kind = Pointer;          // mouse, touchpad, trackpoint
@@ -114,10 +122,23 @@ bool InputMonitor::openDevice(const QString &path)
     if (kind == Touch)
         m_hasTouch = true;
 
+    // Seed the cached tablet-mode state from the switch's current position.
+    if (kind == Switch) {
+        BitArray<SW_CNT> state;
+        if (ioctl(fd, EVIOCGSW(sizeof state.v), state.v) >= 0 &&
+            testBit(state.v, SW_TABLET_MODE)) {
+            if (!m_tabletMode) {
+                m_tabletMode = true;
+                emit tabletModeChanged(true);
+            }
+        }
+    }
+
     char nameBuf[256] = {0};
     ioctl(fd, EVIOCGNAME(sizeof nameBuf), nameBuf);
-    qDebug() << "skvirt: monitoring" << path
-             << (kind == Touch ? "[touch]" : "[pointer]") << nameBuf;
+    const char *tag = kind == Touch ? "[touch]" :
+                      kind == Pointer ? "[pointer]" : "[switch]";
+    qDebug() << "skvirt: monitoring" << path << tag << nameBuf;
     return true;
 }
 
@@ -137,12 +158,23 @@ void InputMonitor::closeDevice(int fd)
     for (const Dev &d : m_devs)
         if (d.kind == Touch)
             m_hasTouch = true;
+    // If the tablet-mode switch went away, fall back to "not a tablet".
+    if (m_tabletMode) {
+        bool stillHasSwitch = false;
+        for (const Dev &d : m_devs)
+            if (d.kind == Switch)
+                stillHasSwitch = true;
+        if (!stillHasSwitch) {
+            m_tabletMode = false;
+            emit tabletModeChanged(false);
+        }
+    }
 }
 
 void InputMonitor::onReadable(int fd, Kind kind)
 {
     input_event evs[64];
-    bool touch = false, pointer = false;
+    bool touch = false, pointer = false, tablet = false, tabletSeen = false;
 
     for (;;) {
         ssize_t n = ::read(fd, evs, sizeof evs);
@@ -171,6 +203,12 @@ void InputMonitor::onReadable(int fd, Kind kind)
                 else if (e.type == EV_ABS && e.code == ABS_MT_TRACKING_ID &&
                          e.value >= 0)
                     touch = true;
+            } else if (kind == Switch) {
+                // Lid/convertible switch: remember the last reported position.
+                if (e.type == EV_SW && e.code == SW_TABLET_MODE) {
+                    tablet = e.value != 0;
+                    tabletSeen = true;
+                }
             } else {  // Pointer
                 if (e.type == EV_REL)
                     pointer = true;
@@ -184,6 +222,11 @@ void InputMonitor::onReadable(int fd, Kind kind)
             break;  // drained
     }
 
+    if (tabletSeen && tablet != m_tabletMode) {
+        m_tabletMode = tablet;
+        qDebug() << "skvirt: tablet mode" << (tablet ? "on" : "off");
+        emit tabletModeChanged(tablet);
+    }
     if (touch)
         emit touchActivity();
     if (pointer)

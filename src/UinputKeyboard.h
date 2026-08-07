@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QString>
 
 // A kernel virtual keyboard via /dev/uinput. Key taps injected here enter the
 // normal input stack (libinput → KWin → fcitx) exactly like a physical
@@ -21,6 +22,11 @@ public:
 
     // Press+release one evdev keycode, optionally with Shift held around it.
     void tap(int keycode, bool shift);
+
+    // Type arbitrary Unicode text through fcitx5's unicode addon direct mode:
+    // for each character emit the Ctrl+Shift+U chord, the hex codepoint
+    // digits, then Enter. Works regardless of the active layout/engine.
+    void typeUnicode(const QString &text);
 
 private:
     void emitEvent(int type, int code, int value);

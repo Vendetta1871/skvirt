@@ -68,6 +68,45 @@ Rectangle {
         ]
     ]
 
+    // Optional numbers row, prepended to letter rows when Settings.numbersRow
+    // is enabled (symbol mode already has digits, so no extra row there).
+    readonly property var numbersRowData: [
+        ["1","1","!",1], ["2","2","@",1], ["3","3","#",1], ["4","4","$",1],
+        ["5","5","%",1], ["6","6","^",1], ["7","7","&",1], ["8","8","*",1],
+        ["9","9","(",1], ["0","0",")",1]
+    ]
+
+    // Long-press data. cornerSymbols (maliit-style, keyed by PHYSICAL key
+    // name so they work for every layout) are drawn as a small glyph in the
+    // key's corner and always come first in the popup strip; accented
+    // variants of the letter (keyed by label) follow in the popup only.
+    readonly property var cornerSymbols: ({
+        "q": "1", "w": "2", "e": "3", "r": "4", "t": "5",
+        "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
+        "a": "@", "s": "#", "d": "$", "f": "-", "g": "&",
+        "h": "_", "j": "+", "k": "(", "l": ")",
+        "z": "`", "x": "\"", "c": ".", "v": ":", "b": ";",
+        "n": "!", "m": "?",
+        "[": "{", "]": "}", ";": ":", "'": "\"", ",": "<", ".": ">",
+        "/": "?", "-": "_", "=": "+", "\\": "|", "`": "~"
+    })
+    readonly property var accentChars: ({
+        "a": "àáâä", "e": "èéêë", "i": "ìíîï", "o": "òóôö", "u": "ùúûü",
+        "c": "ç", "n": "ñ", "s": "ß",
+        "е": "ё", "ё": "е", "и": "й", "й": "и"
+    })
+
+    function cornerFor(keyName) {
+        var c = cornerSymbols[keyName]
+        return c === undefined ? "" : c
+    }
+
+    function altFor(keyName, label) {
+        var s = cornerFor(keyName)
+        var a = accentChars[label]
+        return a === undefined ? s : s + a
+    }
+
     readonly property var rowsSymbol: [
         [
             ["1","1","!",1], ["2","2","@",1], ["3","3","#",1], ["4","4","$",1],
@@ -90,69 +129,163 @@ Rectangle {
         ]
     ]
 
-    readonly property var currentRows: KeyboardController.symbolMode
-        ? rowsSymbol
-        : (KeyboardController.layout === "keyboard-ru" ? rowsRussian : rowsQwerty)
+    readonly property var currentRows: {
+        if (KeyboardController.symbolMode)
+            return rowsSymbol
+        var gen = KeyboardController.generatedRows
+        var letterRows
+        if (gen.length >= 3) {
+            // Generated letter rows (xkb layout of the active IM). They carry
+            // no function keys, so shift and backspace bookend the bottom
+            // letter row and the fixed function row closes the panel, exactly
+            // like the hardcoded rowsQwerty structure.
+            letterRows = [
+                gen[0],
+                gen[1],
+                [rowsQwerty[2][0]].concat(gen[2], [rowsQwerty[2][rowsQwerty[2].length - 1]]),
+                rowsQwerty[3]
+            ]
+        } else {
+            letterRows = KeyboardController.layout === "keyboard-ru" ? rowsRussian : rowsQwerty
+        }
+        if (Settings.numbersRow)
+            return [numbersRowData].concat(letterRows)
+        return letterRows
+    }
 
-    // Key sizing
-    readonly property real keyH: Math.round(root.height / 4.6)
+    // Generated-layout rows are positional (committed by physical key, not by
+    // character). They start at row 0, or row 1 when the numbers row is on.
+    readonly property bool generatedActive: !KeyboardController.symbolMode
+                                         && KeyboardController.generatedRows.length >= 3
+    readonly property int posRowStart: generatedActive && Settings.numbersRow ? 1 : 0
+
+    // Suggestion bar: when visible the panel grows by barArea (main.qml pushes
+    // desiredHeight to the window) and keyH is computed from the remaining
+    // height, so the keys keep exactly the size they have without the bar.
+    readonly property bool barVisible: Settings.showAutosuggestions
+                                    && KeyboardController.suggestions.length > 0
+    readonly property real barH: 36
+    readonly property real barArea: barVisible ? barH + rowSpacing : 0
+    // Height the window should have; the base matches KeyboardWindow's
+    // initial 38%-of-screen sizing in setupLayerShell().
+    readonly property int desiredHeight: Math.round(Screen.height * 0.38) + Math.round(barArea)
+
+    // Key sizing: total panel height is fixed, keys shrink to fit the extra row
+    readonly property real keyH: Math.round((root.height - barArea) / (currentRows.length + 0.6))
     readonly property real keySpacing: 4
     readonly property real rowSpacing: 4
     readonly property real sidePad: 6
 
     Column {
-        id: keyColumn
+        id: panelColumn
         anchors.centerIn: parent
+        width: root.width
         spacing: root.rowSpacing
 
-        Repeater {
-            model: root.currentRows
+        // Autosuggestion bar above the key rows
+        Rectangle {
+            id: suggestionBar
+            visible: root.barVisible
+            width: parent.width
+            height: root.barH
+            color: "transparent"
 
-            // One row
             Row {
-                required property var modelData
-                required property int index
-
-                spacing: root.keySpacing
-                anchors.horizontalCenter: parent.horizontalCenter
-
-                // Compute total widthFactors for this row to derive unit width
-                readonly property real totalFactor: {
-                    var sum = 0
-                    for (var i = 0; i < modelData.length; i++)
-                        sum += modelData[i][3]
-                    return sum
-                }
-                readonly property real unitW: {
-                    var totalSpacing = (modelData.length - 1) * root.keySpacing
-                    return (root.width - 2 * root.sidePad - totalSpacing) / totalFactor
-                }
+                anchors.centerIn: parent
+                spacing: 8
 
                 Repeater {
-                    model: parent.modelData
+                    model: KeyboardController.suggestions
 
-                    Key {
-                        required property var modelData
+                    Rectangle {
+                        required property string modelData
+                        required property int index
 
-                        keyName:    modelData[0]
-                        label:      modelData[1]
-                        shiftLabel: modelData[2]
-                        width:      Math.round(parent.unitW * modelData[3])
-                        height:     root.keyH
-                        isFuncKey:  modelData[0] === "shift"
-                                 || modelData[0] === "backspace"
-                                 || modelData[0] === "enter"
-                                 || modelData[0] === "symbols"
-                                 || modelData[0] === "abc"
-                                 || modelData[0] === "lang"
+                        width: pillLabel.implicitWidth + 24
+                        height: suggestionBar.height - 6
+                        radius: height / 2
+                        color: pillTap.pressed ? "#3daee9" : "#31363b"
 
-                        // Highlight shift key when active
-                        color: {
-                            if (modelData[0] === "shift" && (KeyboardController.shiftActive || KeyboardController.capsLock))
-                                return "#3daee9"
-                            return pressed ? "#3daee9"
-                                 : isFuncKey ? "#2a2e32"
-                                 : "#31363b"
+                        Text {
+                            id: pillLabel
+                            anchors.centerIn: parent
+                            text: parent.modelData
+                            color: "#eff0f1"
+                            font.family: "Noto Sans"
+                            font.pixelSize: 16
+                        }
+
+                        MouseArea {
+                            id: pillTap
+                            anchors.fill: parent
+                            onClicked: KeyboardController.commitSuggestion(parent.index)
+                        }
+                    }
+                }
+            }
+        }
+
+        Column {
+            id: keyColumn
+            width: parent.width
+            spacing: root.rowSpacing
+
+            Repeater {
+                model: root.currentRows
+
+                // One row
+                Row {
+                    required property var modelData
+                    required property int index
+
+                    spacing: root.keySpacing
+                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    // Compute total widthFactors for this row to derive unit width
+                    readonly property real totalFactor: {
+                        var sum = 0
+                        for (var i = 0; i < modelData.length; i++)
+                            sum += modelData[i][3]
+                        return sum
+                    }
+                    readonly property real unitW: {
+                        var totalSpacing = (modelData.length - 1) * root.keySpacing
+                        return (root.width - 2 * root.sidePad - totalSpacing) / totalFactor
+                    }
+                    // Generated-layout letter rows commit by physical position.
+                    readonly property bool positionalRow: root.generatedActive
+                                                       && index >= root.posRowStart
+                                                       && index <= root.posRowStart + 2
+
+                    Repeater {
+                        model: parent.modelData
+
+                        Key {
+                            required property var modelData
+
+                            keyName:    modelData[0]
+                            label:      modelData[1]
+                            shiftLabel: modelData[2]
+                            alternates: root.altFor(modelData[0], modelData[1])
+                            corner:     root.cornerFor(modelData[0])
+                            width:      Math.round(parent.unitW * modelData[3])
+                            height:     root.keyH
+                            positional: parent.positionalRow
+                            isFuncKey:  modelData[0] === "shift"
+                                     || modelData[0] === "backspace"
+                                     || modelData[0] === "enter"
+                                     || modelData[0] === "symbols"
+                                     || modelData[0] === "abc"
+                                     || modelData[0] === "lang"
+
+                            // Highlight shift key when active
+                            color: {
+                                if (modelData[0] === "shift" && (KeyboardController.shiftActive || KeyboardController.capsLock))
+                                    return "#3daee9"
+                                return pressed ? "#3daee9"
+                                     : isFuncKey ? "#2a2e32"
+                                     : "#31363b"
+                            }
                         }
                     }
                 }

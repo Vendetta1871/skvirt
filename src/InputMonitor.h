@@ -22,13 +22,15 @@ public:
     ~InputMonitor() override;
 
     bool hasTouchscreen() const { return m_hasTouch; }
+    bool tabletMode() const { return m_tabletMode; }
 
 signals:
     void touchActivity();    // finger/pen went down on a direct (touchscreen) device
     void pointerActivity();  // mouse/touchpad/trackpoint moved or clicked
+    void tabletModeChanged(bool tabletMode);  // SW_TABLET_MODE switch flipped
 
 private:
-    enum Kind { Ignore, Touch, Pointer };
+    enum Kind { Ignore, Touch, Pointer, Switch };
     struct Dev { int fd; Kind kind; QSocketNotifier *notifier; QString path; };
 
     void openDevices();
@@ -39,4 +41,5 @@ private:
 
     QVector<Dev> m_devs;
     bool m_hasTouch = false;
+    bool m_tabletMode = false;
 };

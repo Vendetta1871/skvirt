@@ -1,0 +1,7 @@
+File=skvirt.kcfg
+ClassName=SkvirtSettings
+Singleton=true
+Mutators=true
+Notifiers=true
+GenerateProperties=true
+ParentInConstructor=true

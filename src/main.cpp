@@ -2,6 +2,7 @@
 #include <QQmlApplicationEngine>
 #include "KeyboardWindow.h"
 #include "KeyboardController.h"
+#include "SettingsBridge.h"
 
 int main(int argc, char *argv[])
 {
@@ -16,6 +17,12 @@ int main(int argc, char *argv[])
         "skvirt", 1, 0, "KeyboardController",
         [](QQmlEngine *, QJSEngine *) -> QObject * {
             return new KeyboardController();
+        });
+
+    qmlRegisterSingletonType<SettingsBridge>(
+        "skvirt", 1, 0, "Settings",
+        [](QQmlEngine *, QJSEngine *) -> QObject * {
+            return new SettingsBridge();
         });
 
     QQmlApplicationEngine engine;

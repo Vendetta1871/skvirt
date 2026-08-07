@@ -28,6 +28,11 @@ public:
     // and caches the full system IM list on first call.
     QString shortLabel(const QString &uniqueName);
 
+    // xkb layout backing a keyboard-* IM: the group's layout override when
+    // fcitx5 sets one, else the suffix of the "keyboard-XX" unique name.
+    // {} for non-keyboard IMs (pinyin, …).
+    QString layoutForIM(const QString &uniqueName) const;
+
     // Fire-and-forget switch; does not wait for fcitx5 to finish applying it.
     void setCurrentIM(const QString &uniqueName);
 

@@ -3,6 +3,9 @@
 #include "InputMonitor.h"
 #include "KWinVk.h"
 #include "FcitxIm.h"
+#include "SuggestionEngine.h"
+
+#include "skvirt.h"  // generated SkvirtSettings (kconfig_add_kcfg_files)
 
 #include <QHash>
 #include <QDebug>
@@ -75,6 +78,25 @@ static bool specialKey(const QString &name, int &keycode)
     return true;
 }
 
+// US-position key name (as used in the QML row data and by LayoutGenerator)
+// -> evdev keycode. Same codes as physKeyForChar's letter/punctuation rows.
+static bool evdevForKeyName(const QString &name, int &keycode)
+{
+    static const QHash<QString, int> t = {
+        {"q", 16}, {"w", 17}, {"e", 18}, {"r", 19}, {"t", 20}, {"y", 21},
+        {"u", 22}, {"i", 23}, {"o", 24}, {"p", 25}, {"[", 26}, {"]", 27},
+        {"a", 30}, {"s", 31}, {"d", 32}, {"f", 33}, {"g", 34}, {"h", 35},
+        {"j", 36}, {"k", 37}, {"l", 38}, {";", 39}, {"'", 40},
+        {"z", 44}, {"x", 45}, {"c", 46}, {"v", 47}, {"b", 48}, {"n", 49},
+        {"m", 50}, {",", 51}, {".", 52}, {"/", 53},
+    };
+    auto it = t.constFind(name);
+    if (it == t.constEnd())
+        return false;
+    keycode = *it;
+    return true;
+}
+
 KeyboardController::KeyboardController(QObject *parent) : QObject(parent)
 {
     QMetaObject::invokeMethod(this, &KeyboardController::initBackend,
@@ -89,11 +111,14 @@ void KeyboardController::initBackend()
     m_input = std::make_unique<InputMonitor>();
     m_kwin  = std::make_unique<KWinVk>();
     m_fcitx = std::make_unique<FcitxIm>();
+    m_engine = std::make_unique<SuggestionEngine>();
 
     // Reflect whatever IM fcitx5 is already active on, rather than assuming
     // English.
     m_layout = m_fcitx->currentIM();
     m_layoutLabel = m_fcitx->shortLabel(m_layout);
+    m_engine->setInputMethod(m_layout);
+    regenerateLayout();
     emit layoutChanged();
 
     // skvirt owns its own visibility policy (touch → show, mouse/lost focus →
@@ -103,10 +128,13 @@ void KeyboardController::initBackend()
             this, &KeyboardController::onTouchActivity);
     connect(m_input.get(), &InputMonitor::pointerActivity,
             this, &KeyboardController::onPointerActivity);
+    connect(m_input.get(), &InputMonitor::tabletModeChanged,
+            this, &KeyboardController::onTabletModeChanged);
     connect(m_kwin.get(), &KWinVk::textInputFocusChanged,
             this, &KeyboardController::onFieldFocusChanged);
 
     m_fieldFocused = m_kwin->textInputFocused();
+    m_tabletMode = m_input->tabletMode();
 }
 
 void KeyboardController::setVisible(bool v)
@@ -123,6 +151,8 @@ void KeyboardController::showKeyboard()
 {
     if (m_visible)
         return;
+    if (SkvirtSettings::showOnlyInTabletMode() && !m_tabletMode)
+        return;  // setting gates auto-show to tablet (convertible) mode
     qDebug() << "skvirt: SHOW (touch + field focused)";
     setVisible(true);
 }
@@ -145,9 +175,23 @@ void KeyboardController::onTouchActivity()
 
 void KeyboardController::onPointerActivity()
 {
-    // The user reached for the mouse/touchpad — get out of the way, like Windows.
+    // The user reached for the mouse/touchpad. We always leave touch mode —
+    // the next finger tap must re-trigger the show path — but the panel only
+    // gets out of the way when the user asked for that (hideOnMouseMove).
     m_touchMode = false;
-    hideKeyboard();
+    if (SkvirtSettings::hideOnMouseMove())
+        hideKeyboard();
+}
+
+void KeyboardController::onTabletModeChanged(bool tabletMode)
+{
+    m_tabletMode = tabletMode;
+    if (!SkvirtSettings::showOnlyInTabletMode())
+        return;  // tablet mode only matters to the engine when gated on it
+    if (!tabletMode)
+        hideKeyboard();                  // folded back to laptop: get out of the way
+    else if (m_touchMode && m_fieldFocused)
+        showKeyboard();                  // flipped to tablet with a field ready: pop up
 }
 
 void KeyboardController::onFieldFocusChanged(bool focused)
@@ -166,18 +210,62 @@ void KeyboardController::commitText(const QString &text)
 
     QChar ch = text.at(0);
     PhysKey pk;
-    if (!physKeyForChar(ch, pk)) {
-        qWarning() << "skvirt: no physical key mapping for" << ch;
-        return;
+    if (physKeyForChar(ch, pk)) {
+        // Inject the US-position key; the active fcitx layout/engine decides
+        // the actual output (latin, cyrillic, pinyin composition, …).
+        m_kbd->tap(pk.keycode, pk.shift);
+    } else {
+        // No US-layout key produces this character (accents, CJK, …): route
+        // it through fcitx5's unicode addon instead of dropping it.
+        m_kbd->typeUnicode(text);
     }
-    // Inject the US-position key; the active fcitx layout/engine decides the
-    // actual output (latin, cyrillic, pinyin composition, …).
-    m_kbd->tap(pk.keycode, pk.shift);
+
+    updateWordBuffer(ch);
 
     if (m_shift) {  // one-shot shift
         m_shift = false;
         emit shiftActiveChanged();
     }
+}
+
+void KeyboardController::commitKeyAt(const QString &keyName, bool shifted, const QString &producedChar)
+{
+    if (!m_kbd)
+        return;
+
+    int keycode;
+    if (evdevForKeyName(keyName, keycode)) {
+        // Inject the physical key at this position; the active fcitx layout
+        // decides the actual character, so non-US letters (ü, é, й, …) work
+        // without a char→key mapping.
+        m_kbd->tap(keycode, shifted);
+    } else {
+        // Unknown positional name: fall back to the character path.
+        commitText(producedChar);
+        return;  // commitText already handled buffer + one-shot shift
+    }
+
+    if (!producedChar.isEmpty()) {
+        const QChar c = producedChar.at(0);
+        updateWordBuffer(c.isLetter() ? c.toLower() : c);
+    }
+
+    if (m_shift) {  // one-shot shift
+        m_shift = false;
+        emit shiftActiveChanged();
+    }
+}
+
+void KeyboardController::regenerateLayout()
+{
+    m_generatedRows.clear();
+    // Non-keyboard IMs (pinyin, …) compose from latin letters on a QWERTY
+    // panel; an empty generatedRows keeps QML on its hardcoded fallback.
+    if (!m_fcitx || !m_layout.startsWith(QLatin1String("keyboard-")))
+        return;
+    const QString xkbLayout = m_fcitx->layoutForIM(m_layout);
+    if (!xkbLayout.isEmpty())
+        m_generatedRows = m_layoutGen.generate(xkbLayout);
 }
 
 void KeyboardController::sendSpecial(const QString &name)
@@ -190,6 +278,80 @@ void KeyboardController::sendSpecial(const QString &name)
         return;
     }
     m_kbd->tap(keycode, false);
+
+    // Keep the current-word buffer in sync with what the app received.
+    const QString key = name.toLower();
+    if (key == QLatin1String("backspace")) {
+        if (!m_word.isEmpty()) {
+            m_word.chop(1);
+            refreshSuggestions();
+        }
+    } else if (key == QLatin1String("space") || key == QLatin1String("enter")
+               || key == QLatin1String("tab") || key == QLatin1String("escape")) {
+        if (!m_word.isEmpty()) {
+            m_word.clear();
+            refreshSuggestions();
+        }
+    }
+}
+
+// Track the word being typed so the SuggestionEngine has a prefix to complete.
+// Pinyin composes from plain latin letters; hunspell layouts from letters of
+// the alphabet at hand — anything else terminates the word.
+void KeyboardController::updateWordBuffer(QChar committed)
+{
+    const bool wordChar = m_engine->isPinyinBackend()
+        ? (committed >= QLatin1Char('a') && committed <= QLatin1Char('z'))
+          || (committed >= QLatin1Char('A') && committed <= QLatin1Char('Z'))
+        : committed.isLetter();
+    if (wordChar) {
+        if (m_word.size() < 32)   // bound the per-keystroke lookup work
+            m_word.append(committed);
+    } else if (!m_word.isEmpty()) {
+        m_word.clear();
+    }
+    refreshSuggestions();
+}
+
+void KeyboardController::refreshSuggestions()
+{
+    const QStringList next = m_word.isEmpty()
+        ? QStringList{}
+        : m_engine->suggest(m_word, m_engine->isPinyinBackend() ? 7 : 5);
+    if (next == m_suggestions)
+        return;
+    m_suggestions = next;
+    emit suggestionsChanged();
+}
+
+void KeyboardController::commitSuggestion(int index)
+{
+    if (!m_kbd || !m_engine || index < 0 || index >= m_suggestions.size())
+        return;
+    const QString candidate = m_suggestions.at(index);
+
+    if (m_engine->isPinyinBackend()) {
+        // Escape cancels fcitx's live preedit built from the latin buffer we
+        // injected, then the candidate is committed through the unicode addon.
+        // Tradeoff: fcitx never sees this selection, so its frequency/history
+        // learning is not updated by bar taps — accepted for now.
+        m_kbd->tap(1, false);  // escape
+        m_kbd->typeUnicode(candidate);
+        m_word.clear();
+    } else {
+        // Type only the missing tail (common prefix with the buffer is already
+        // in the app), then a space to end the word.
+        int common = 0;
+        while (common < candidate.size() && common < m_word.size()
+               && candidate.at(common).toLower() == m_word.at(common).toLower())
+            ++common;
+        const QString tail = candidate.mid(common);
+        for (const QChar ch : tail)
+            commitText(QString(ch));  // reuses the physKey / unicode path
+        m_kbd->tap(57, false);        // space
+        m_word.clear();
+    }
+    refreshSuggestions();
 }
 
 void KeyboardController::toggleShift()
@@ -224,6 +386,10 @@ void KeyboardController::cycleLayout()
     m_fcitx->setCurrentIM(next);
     m_layout = next;
     m_layoutLabel = m_fcitx->shortLabel(next);
+    m_engine->setInputMethod(next);
+    m_word.clear();
+    refreshSuggestions();
+    regenerateLayout();
     emit layoutChanged();
 }
 
