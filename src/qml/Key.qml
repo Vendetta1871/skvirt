@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import skvirt 1.0
 
 Rectangle {
@@ -78,6 +79,12 @@ Rectangle {
     property bool longPressFired: false  // release must not commit the base char
     property bool popupVisible: false
     property int popupIndex: -1          // highlighted strip item (-1 = none)
+    property bool reserveActive: false   // topReserve was requested for this popup
+
+    // Ask the keyboard panel to grow upward (top-row popups overflow the
+    // window top) and to release that space again.
+    signal reserveNeeded(real h)
+    signal reserveReleased()
 
     // Popup strip geometry (kept in sync with the Rectangle below).
     readonly property int popupPad: 6
@@ -92,12 +99,19 @@ Rectangle {
     function popupIndexAt(mx, my) {
         if (!popupVisible)
             return -1
-        var left = (root.width - popupStripW) / 2
-        var top = -popupStripH - 6
-        if (my < top || my > top + popupStripH)
+        if (my < popup.y || my > popup.y + popup.height)
             return -1
-        var idx = Math.floor((mx - left - popupPad) / (popupSlot + popupSpacing))
+        var idx = Math.floor((mx - popup.x - popupPad) / (popupSlot + popupSpacing))
         return Math.max(0, Math.min(alternates.length - 1, idx))
+    }
+
+    function closePopup() {
+        root.popupVisible = false
+        root.popupIndex = -1
+        if (root.reserveActive) {
+            root.reserveActive = false
+            root.reserveReleased()
+        }
     }
 
     Rectangle {
@@ -106,7 +120,15 @@ Rectangle {
         z: 10
         width: root.popupStripW
         height: root.popupStripH
-        x: (root.width - width) / 2
+        // Centered on the key, clamped into the window so edge keys (q/p/a/l)
+        // don't clip the strip at the sides.
+        x: {
+            var keyWindowX = root.mapToItem(null, 0, 0).x
+            var winW = Window.window ? Window.window.width : root.width
+            return Math.max(4 - keyWindowX,
+                            Math.min((root.width - width) / 2,
+                                     winW - keyWindowX - width - 4))
+        }
         y: -height - 6
         radius: 8
         color: "#31363b"
@@ -154,6 +176,12 @@ Rectangle {
                 root.longPressFired = true
                 root.popupIndex = -1
                 root.popupVisible = true
+                // Would the strip stick out above the window top? Ask the
+                // panel to grow upward (layer-shell, bottom-anchored).
+                if (root.mapToItem(null, 0, -(root.popupStripH + 6)).y < 0) {
+                    root.reserveActive = true
+                    root.reserveNeeded(root.popupStripH + 6)
+                }
             }
         }
         onPositionChanged: {
@@ -164,8 +192,7 @@ Rectangle {
             root.pressed = false
             if (root.longPressFired) {
                 var idx = root.popupIndexAt(mouse.x, mouse.y)
-                root.popupVisible = false
-                root.popupIndex = -1
+                root.closePopup()
                 if (idx >= 0)
                     KeyboardController.commitText(root.alternates.charAt(idx))
                 return  // released outside the strip: cancel, type nothing
@@ -186,8 +213,7 @@ Rectangle {
         }
         onCanceled: {
             root.pressed = false
-            root.popupVisible = false
-            root.popupIndex = -1
+            root.closePopup()
         }
     }
 }

@@ -168,17 +168,29 @@ Rectangle {
     readonly property real barArea: barVisible ? barH + rowSpacing : 0
     // Height the window should have; the base matches KeyboardWindow's
     // initial 38%-of-screen sizing in setupLayerShell().
-    readonly property int desiredHeight: Math.round(Screen.height * 0.38) + Math.round(barArea)
+    // Long-press popup reserve: when a popup would stick out above the panel
+    // top (top-row keys), the window temporarily grows upward by topReserve
+    // (transparent strip — the popup renders there, over the app behind).
+    // zoneHeight excludes it so the exclusive zone never jumps with popups.
+    property real topReserve: 0
+    readonly property int desiredHeight: Math.round(Screen.height * 0.38) + Math.round(barArea) + Math.round(topReserve)
+    readonly property int zoneHeight: desiredHeight - Math.round(topReserve)
 
-    // Key sizing: total panel height is fixed, keys shrink to fit the extra row
-    readonly property real keyH: Math.round((root.height - barArea) / (currentRows.length + 0.6))
+    // Key sizing: total panel height is fixed, keys shrink to fit the extra
+    // row; topReserve (popup overflow space) is excluded so keys don't grow
+    // when the window stretches for a long-press popup.
+    readonly property real keyH: Math.round((root.height - barArea - topReserve) / (currentRows.length + 0.6))
     readonly property real keySpacing: 4
     readonly property real rowSpacing: 4
     readonly property real sidePad: 6
 
     Column {
         id: panelColumn
-        anchors.centerIn: parent
+        // Bottom-anchored: when the window grows upward for a top-row
+        // long-press popup (topReserve), the free space lands above the keys
+        // and the keys stay exactly where they were.
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
         width: root.width
         spacing: root.rowSpacing
 
@@ -271,6 +283,11 @@ Rectangle {
                             width:      Math.round(parent.unitW * modelData[3])
                             height:     root.keyH
                             positional: parent.positionalRow
+
+                            // Top-row popup overflow: reserve transparent
+                            // space above the panel while the popup is open.
+                            onReserveNeeded: function(h) { root.topReserve = h }
+                            onReserveReleased: root.topReserve = 0
                             isFuncKey:  modelData[0] === "shift"
                                      || modelData[0] === "backspace"
                                      || modelData[0] === "enter"

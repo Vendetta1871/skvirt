@@ -11,11 +11,13 @@ KeyboardWindow {
         anchors.fill: parent
 
         // Grow/shrink the layer-shell window when the suggestion bar appears
-        // or disappears so the bar never covers the key rows.
+        // or disappears so the bar never covers the key rows. The exclusive
+        // zone excludes the transient long-press popup reserve so apps are
+        // not pushed around by a popup.
         onDesiredHeightChanged: {
             root.updateKeyboardHeight(desiredHeight)
             if (root.visible)
-                root.updateExclusiveZone(desiredHeight)
+                root.updateExclusiveZone(zoneHeight)
         }
     }
 
