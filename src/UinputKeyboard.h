@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QObject>
 #include <QString>
 
@@ -20,8 +21,9 @@ public:
 
     bool ready() const { return m_fd >= 0; }
 
-    // Press+release one evdev keycode, optionally with Shift held around it.
-    void tap(int keycode, bool shift);
+    // Press+release one evdev keycode, optionally with Shift and any further
+    // modifier keycodes (Ctrl/Alt/Meta) held around it.
+    void tap(int keycode, bool shift, const QList<int> &held = {});
 
     // Type arbitrary Unicode text through fcitx5's unicode addon direct mode:
     // for each character emit the Ctrl+Shift+U chord, the hex codepoint

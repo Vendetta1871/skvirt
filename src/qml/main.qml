@@ -19,6 +19,11 @@ KeyboardWindow {
             if (root.visible)
                 root.updateExclusiveZone(zoneHeight)
         }
+
+        // The panel is exactly as tall as the keyboard it draws, which the
+        // layer-shell window can only learn from QML: push the first value
+        // too, in case it never changes afterwards.
+        Component.onCompleted: root.updateKeyboardHeight(desiredHeight)
     }
 
     // Visibility is driven by fcitx5 (Show/HideVirtualKeyboard) via the controller.

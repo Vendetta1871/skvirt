@@ -42,6 +42,7 @@ qt6_add_resources(skvirt "qml"
         src/qml/main.qml
         src/qml/SkvirtKeyboard.qml
         src/qml/Key.qml
+        src/qml/MacTheme.qml
 )
 
 target_link_libraries(skvirt PRIVATE

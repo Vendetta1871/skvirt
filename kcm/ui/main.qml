@@ -36,9 +36,27 @@ Kirigami.FormLayout {
     }
 
     QQC2.CheckBox {
-        id: numbersRowCheck
-        text: i18n("Numbers row")
-        checked: kcm.settings.numbersRow
-        onToggled: kcm.settings.numbersRow = checked
+        id: functionRowCheck
+        text: i18n("Function key row (esc, F1–F12)")
+        checked: kcm.settings.functionRow
+        onToggled: kcm.settings.functionRow = checked
+    }
+
+    QQC2.Label {
+        // Without the row, its keys stay reachable by holding the key below
+        // them — a hint worth spelling out, since nothing on screen shows it.
+        text: i18n("Without the row, hold ` or a digit to reach esc and F1–F12.")
+        font: Kirigami.Theme.smallFont
+        opacity: 0.7
+        enabled: !functionRowCheck.checked && longPressCheck.checked
+    }
+
+    QQC2.ComboBox {
+        id: themeCombo
+        Kirigami.FormData.label: i18n("Appearance:")
+        // Indices match the Theme enum in skvirt.kcfg (System, Light, Dark).
+        model: [i18n("Follow system colour scheme"), i18n("Light"), i18n("Dark")]
+        currentIndex: kcm.settings.theme
+        onActivated: kcm.settings.theme = currentIndex
     }
 }

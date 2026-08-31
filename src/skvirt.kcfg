@@ -20,9 +20,24 @@
             <label>Show symbols on long press</label>
             <default>true</default>
         </entry>
-        <entry name="numbersRow" type="Bool">
-            <label>Numbers row</label>
+        <entry name="functionRow" type="Bool">
+            <label>Function key row</label>
             <default>false</default>
+        </entry>
+        <entry name="theme" type="Enum">
+            <label>Colour theme</label>
+            <choices>
+                <choice name="System">
+                    <label>Follow the system colour scheme</label>
+                </choice>
+                <choice name="Light">
+                    <label>Light</label>
+                </choice>
+                <choice name="Dark">
+                    <label>Dark</label>
+                </choice>
+            </choices>
+            <default>System</default>
         </entry>
     </group>
 </kcfg>

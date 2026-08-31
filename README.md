@@ -15,6 +15,14 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
 
 ## Features
 
+- **macOS-style panel and key set:** the layout of a Mac keyboard — number row,
+  the three letter rows framed by `tab` / `caps lock` / `shift` / `return` /
+  `delete`, and a bottom row of 🌐 `⌃` `⌥` `⌘` space `⌘` `⌥` plus the
+  inverted-T arrow cluster — drawn as a floating slab with square caps, in a
+  **light or dark** appearance that can follow the system colour scheme.
+  `⌃` `⌥` `⌘` latch like the one-shot Shift: tap one, and the next key is sent
+  with it held. 🌐 switches the input source (the fcitx5 IM), and `caps lock`
+  has its indicator light.
 - **Touch-driven, Windows-like:** touching a text field with a finger/pen pops
   the keyboard up; reaching for the mouse/touchpad/trackpoint, losing the field,
   or pressing the ▼ button hides it. A mouse click never summons it.
@@ -26,12 +34,17 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
   Tapping a pinyin candidate commits the hanzi directly.
 - **Layout generator:** the on-screen rows are generated at runtime from the
   active IM's xkb symbols (`/usr/share/X11/xkb/symbols/*`), so any
-  `keyboard-XX` layout (de, fr, …) shows the right legends. Hardcoded
-  QWERTY/ЙЦУКЕН remain as fallback.
-- **Long-press symbols:** holding a letter opens an alternates strip
-  (digits, accented variants, ё/й, shifted punctuation); slide to pick,
-  release to type.
-- **Optional numbers row** that shrinks the keys instead of growing the panel.
+  `keyboard-XX` layout (de, fr, …) shows the right legends on all four typing
+  rows, dead keys (`^` `´` `¨`) included. Hardcoded QWERTY/ЙЦУКЕН remain as
+  fallback.
+- **Long-press symbols:** holding a key opens an alternates strip — the
+  digit/symbol of its physical position first (`1` on `q`, `@` on `a`, `?` on
+  `m`), then the accented variants of the letter on the cap (à á â ä, ё/й, …).
+  Slide to pick, release to type. What a key hides is printed small in its
+  corner, so the strip is not a secret.
+- **Optional function row** — `esc` and F1–F12 across the top. With it off, the
+  same keys stay reachable by holding the key below them (and are shown in that
+  key's corner): hold `` ` `` for `esc`, `1` for F1, … `=` for F12.
 - **Tablet-mode aware:** can auto-show only when the convertible is folded
   into tablet mode (via the `SW_TABLET_MODE` evdev switch).
 - **KDE settings module:** *System Settings → skvirt* (KCM) toggles all of
@@ -89,10 +102,15 @@ Settings (or run it from the build tree:
 - **Hide when mouse is moved** — reaching for a pointer device dismisses the
   panel (default on).
 - **Show autosuggestions** — completion/candidate bar above the keys.
-- **Show symbols on long press** — alternates popup on held letters.
-- **Numbers row** — extra digit row; keys shrink, panel height is unchanged.
+- **Show symbols on long press** — accent popup on held letters, and F1–F12 on
+  the held number row when the function row is off.
+- **Function key row** — `esc` and F1–F12 on top; the panel keeps its height
+  budget, so the keys shrink to make room.
+- **Appearance** — light, dark, or follow the system colour scheme.
 
 ![skvirt settings page in System Settings](screenshots/settings.png)
+
+(The screenshot predates the appearance and function-row options.)
 
 ## How it works
 
@@ -110,7 +128,11 @@ Settings (or run it from the build tree:
   `Qt::WindowDoesNotAcceptFocus` so mapping it never pulls focus off the app.
 - `SuggestionEngine` — word completions: Hunspell dictionaries for keyboard
   layouts, libime (`PinyinIME` + `sc.dict` + `zh_CN.lm`) for pinyin IMs.
-- `LayoutGenerator` — parses the active layout's xkb symbols into QML rows.
+- `LayoutGenerator` — parses the active layout's xkb symbols into the four QML
+  typing rows (number row + AD/AC/AB), keeping their US-position names so keys
+  commit by physical position.
+- `MacTheme.qml` — the light/dark palette (and the SF Pro → Inter → Noto Sans
+  font fallback) every key paints from.
 - `SettingsBridge` + `kcm/` — KConfigXT settings (`skvirtrc`) shared with a
   KQuickManagedConfigModule KCM; `KConfigWatcher` reloads them live.
 
@@ -118,9 +140,11 @@ Settings (or run it from the build tree:
 
 - Input devices are enumerated at startup; hot-plugged keyboards/mice/touchscreens
   are not picked up until restart.
-- Generated layouts cover the three letter rows (group 1 of the `basic` xkb
-  section); exotic variants, dead keys and multi-group layouts fall back to
-  the hardcoded QWERTY/ЙЦУКЕН rows.
+- Generated layouts cover the four typing rows (group 1 of the `basic` xkb
+  section); exotic variants and multi-group layouts fall back to the hardcoded
+  QWERTY/ЙЦУКЕН rows. A key whose group-1 symbol has no printable form (an
+  uncommon dead key, say) is dropped from its row, which then renders a little
+  narrower than the rest.
 - Pinyin candidates committed from the suggestion bar do not teach fcitx5's
   history (the candidate is injected as Unicode after cancelling the preedit).
 - If focus moves to another text-capable window while in touch mode, the

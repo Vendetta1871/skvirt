@@ -15,7 +15,9 @@ class SettingsBridge : public QObject
     Q_PROPERTY(bool hideOnMouseMove READ hideOnMouseMove NOTIFY hideOnMouseMoveChanged)
     Q_PROPERTY(bool showAutosuggestions READ showAutosuggestions NOTIFY showAutosuggestionsChanged)
     Q_PROPERTY(bool longPressSymbols READ longPressSymbols NOTIFY longPressSymbolsChanged)
-    Q_PROPERTY(bool numbersRow READ numbersRow NOTIFY numbersRowChanged)
+    Q_PROPERTY(bool functionRow READ functionRow NOTIFY functionRowChanged)
+    // 0 = follow the system colour scheme, 1 = light, 2 = dark.
+    Q_PROPERTY(int theme READ theme NOTIFY themeChanged)
 
 public:
     explicit SettingsBridge(QObject *parent = nullptr);
@@ -24,14 +26,16 @@ public:
     bool hideOnMouseMove() const;
     bool showAutosuggestions() const;
     bool longPressSymbols() const;
-    bool numbersRow() const;
+    bool functionRow() const;
+    int theme() const;
 
 signals:
     void showOnlyInTabletModeChanged();
     void hideOnMouseMoveChanged();
     void showAutosuggestionsChanged();
     void longPressSymbolsChanged();
-    void numbersRowChanged();
+    void functionRowChanged();
+    void themeChanged();
 
 private:
     // Reload SkvirtSettings from disk and emit changed signals for entries

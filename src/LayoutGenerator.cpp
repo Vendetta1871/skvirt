@@ -2,34 +2,43 @@
 
 #include <QFile>
 #include <QHash>
+#include <QList>
 #include <QMap>
 #include <QRegularExpression>
 
 namespace {
 
-// US-position key names per physical xkb key code, one entry per position.
-// AD01..AD12 / AC01..AC11 / AB01..AB10.
-const QStringList kRowNames[3] = {
-    {QStringLiteral("q"), QStringLiteral("w"), QStringLiteral("e"), QStringLiteral("r"),
-     QStringLiteral("t"), QStringLiteral("y"), QStringLiteral("u"), QStringLiteral("i"),
-     QStringLiteral("o"), QStringLiteral("p"), QStringLiteral("["), QStringLiteral("]")},
-    {QStringLiteral("a"), QStringLiteral("s"), QStringLiteral("d"), QStringLiteral("f"),
-     QStringLiteral("g"), QStringLiteral("h"), QStringLiteral("j"), QStringLiteral("k"),
-     QStringLiteral("l"), QStringLiteral(";"), QStringLiteral("'")},
-    {QStringLiteral("z"), QStringLiteral("x"), QStringLiteral("c"), QStringLiteral("v"),
-     QStringLiteral("b"), QStringLiteral("n"), QStringLiteral("m"), QStringLiteral(","),
-     QStringLiteral("."), QStringLiteral("/")},
-};
-const char kRowPrefix[3] = {'A', 'A', 'A'};
-const char kRowLetter[3] = {'D', 'C', 'B'};
+// One generated key: its xkb physical code, the US-position name the
+// controller commits by, and its width factor in key units.
+struct KeyPos { const char *code; const char *name; double width; };
 
-QString physCode(int row, int pos)
-{
-    return QStringLiteral("%1%2%3")
-        .arg(QLatin1Char(kRowPrefix[row]))
-        .arg(QLatin1Char(kRowLetter[row]))
-        .arg(pos + 1, 2, 10, QLatin1Char('0'));
-}
+// The four typing rows of an ANSI/Mac keyboard, in panel order. The function
+// keys around them (tab, caps lock, shift, return, delete, …) are fixed and
+// live in QML; everything here follows the active xkb layout.
+const QList<KeyPos> kRows[4] = {
+    // Number row: TLDE + AE01..AE12.
+    {{"TLDE", "`", 1.0},
+     {"AE01", "1", 1.0}, {"AE02", "2", 1.0}, {"AE03", "3", 1.0},
+     {"AE04", "4", 1.0}, {"AE05", "5", 1.0}, {"AE06", "6", 1.0},
+     {"AE07", "7", 1.0}, {"AE08", "8", 1.0}, {"AE09", "9", 1.0},
+     {"AE10", "0", 1.0}, {"AE11", "-", 1.0}, {"AE12", "=", 1.0}},
+    // Tab row: AD01..AD12 + the backslash key that closes it on ANSI.
+    {{"AD01", "q", 1.0}, {"AD02", "w", 1.0}, {"AD03", "e", 1.0},
+     {"AD04", "r", 1.0}, {"AD05", "t", 1.0}, {"AD06", "y", 1.0},
+     {"AD07", "u", 1.0}, {"AD08", "i", 1.0}, {"AD09", "o", 1.0},
+     {"AD10", "p", 1.0}, {"AD11", "[", 1.0}, {"AD12", "]", 1.0},
+     {"BKSL", "\\", 1.5}},
+    // Home row: AC01..AC11.
+    {{"AC01", "a", 1.0}, {"AC02", "s", 1.0}, {"AC03", "d", 1.0},
+     {"AC04", "f", 1.0}, {"AC05", "g", 1.0}, {"AC06", "h", 1.0},
+     {"AC07", "j", 1.0}, {"AC08", "k", 1.0}, {"AC09", "l", 1.0},
+     {"AC10", ";", 1.0}, {"AC11", "'", 1.0}},
+    // Bottom letter row: AB01..AB10.
+    {{"AB01", "z", 1.0}, {"AB02", "x", 1.0}, {"AB03", "c", 1.0},
+     {"AB04", "v", 1.0}, {"AB05", "b", 1.0}, {"AB06", "n", 1.0},
+     {"AB07", "m", 1.0}, {"AB08", ",", 1.0}, {"AB09", ".", 1.0},
+     {"AB10", "/", 1.0}},
+};
 
 // ---- keysym name -> character ---------------------------------------------
 
@@ -95,8 +104,27 @@ QChar codepointToChar(uint cp)
 // (NoSymbol/VoidSymbol, dead keys, modifiers, unmapped values).
 QChar keysymToChar(const QString &sym)
 {
-    if (sym.isEmpty() || sym.startsWith(QLatin1String("dead_")))
+    if (sym.isEmpty())
         return QChar();
+
+    // Dead keys are real keys on the physical keyboard, and injecting their
+    // keycode composes correctly through xkb — they just have no character of
+    // their own, so they are drawn with the spacing form of their diacritic
+    // (^ ´ ¨ …) the way a German or French keyboard prints them. Dead keys
+    // outside this table are dropped rather than mislabelled.
+    if (sym.startsWith(QLatin1String("dead_"))) {
+        static const QHash<QString, ushort> deadChars = {
+            {QStringLiteral("dead_grave"), 0x60},       {QStringLiteral("dead_acute"), 0xB4},
+            {QStringLiteral("dead_circumflex"), 0x5E},  {QStringLiteral("dead_tilde"), 0x7E},
+            {QStringLiteral("dead_macron"), 0xAF},      {QStringLiteral("dead_breve"), 0x2D8},
+            {QStringLiteral("dead_abovedot"), 0x2D9},   {QStringLiteral("dead_diaeresis"), 0xA8},
+            {QStringLiteral("dead_abovering"), 0xB0},   {QStringLiteral("dead_doubleacute"), 0x2DD},
+            {QStringLiteral("dead_caron"), 0x2C7},      {QStringLiteral("dead_cedilla"), 0xB8},
+            {QStringLiteral("dead_ogonek"), 0x2DB},     {QStringLiteral("dead_currency"), 0xA4},
+        };
+        const auto it = deadChars.constFind(sym);
+        return it == deadChars.constEnd() ? QChar() : QChar(*it);
+    }
 
     // Single-character names are the character itself ("e", "3", …).
     if (sym.size() == 1)
@@ -249,34 +277,28 @@ QVariantList LayoutGenerator::generate(const QString &layoutName)
     collectKeys(base, section, 0, keys, cache);
 
     QVariantList rows;
-    for (int r = 0; r < 3; ++r) {
+    for (const QList<KeyPos> &positions : kRows) {
         QVariantList row;
-        for (int i = 0; i < kRowNames[r].size(); ++i) {
-            const auto it = keys.constFind(physCode(r, i));
+        for (const KeyPos &pos : positions) {
+            const auto it = keys.constFind(QLatin1String(pos.code));
             if (it == keys.constEnd())
                 continue;
             const QStringList &syms = it.value();
             const QChar lower = keysymToChar(syms.value(0));
             if (lower.isNull())
                 continue;  // unprintable key: drop it, keep the row clean
-            // Letters only: on Latin layouts the trailing positions ([ ] ; '
-            // , . /) are punctuation, which belongs in the symbol panel or
-            // behind long-press — not in the letter rows. On Cyrillic & Co
-            // those same positions hold letters and are kept.
-            if (!lower.isLetter())
-                continue;
             const QChar upper = syms.size() > 1 ? keysymToChar(syms.at(1)) : QChar();
             const QString shiftLabel =
                 (!upper.isNull() && upper != lower) ? QString(upper) : QString();
             // QVariant::fromValue: plain append() would flatten the list.
-            row.append(QVariant::fromValue(
-                QVariantList{kRowNames[r][i], QString(lower), shiftLabel, 1.0}));
+            row.append(QVariant::fromValue(QVariantList{
+                QLatin1String(pos.name), QString(lower), shiftLabel, pos.width}));
         }
         rows.append(QVariant::fromValue(row));
     }
 
     // Sanity check: a real alphabetic layout has a near-full top letter row.
-    if (rows.at(0).toList().size() < 7)
+    if (rows.at(1).toList().size() < 7)
         return {};
     return rows;
 }

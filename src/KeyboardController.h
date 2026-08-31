@@ -2,6 +2,7 @@
 
 #include "LayoutGenerator.h"
 
+#include <QList>
 #include <QObject>
 #include <QQmlEngine>
 #include <QStringList>
@@ -25,12 +26,18 @@ class KeyboardController : public QObject
     Q_PROPERTY(bool shiftActive READ shiftActive NOTIFY shiftActiveChanged)
     Q_PROPERTY(bool capsLock READ capsLock NOTIFY capsLockChanged)
     Q_PROPERTY(bool symbolMode READ symbolMode NOTIFY symbolModeChanged)
+    // Latched Mac modifiers (⌃ ⌥ ⌘): armed by a tap, held around the next
+    // key and released again, exactly like the one-shot Shift.
+    Q_PROPERTY(bool controlActive READ controlActive NOTIFY modifiersChanged)
+    Q_PROPERTY(bool optionActive READ optionActive NOTIFY modifiersChanged)
+    Q_PROPERTY(bool commandActive READ commandActive NOTIFY modifiersChanged)
     Q_PROPERTY(QString layout READ layout NOTIFY layoutChanged)
     Q_PROPERTY(QString layoutLabel READ layoutLabel NOTIFY layoutChanged)
     Q_PROPERTY(QStringList suggestions READ suggestions NOTIFY suggestionsChanged)
-    // Letter rows generated from the active IM's xkb layout (3 rows of
-    // [keyName, label, shiftLabel, width]); empty when the active IM is not a
-    // keyboard-* IM or generation failed — QML falls back to hardcoded rows.
+    // Typing rows generated from the active IM's xkb layout (4 rows of
+    // [keyName, label, shiftLabel, width]: number row + the three letter
+    // rows); empty when the active IM is not a keyboard-* IM or generation
+    // failed — QML falls back to hardcoded rows.
     Q_PROPERTY(QVariantList generatedRows READ generatedRows NOTIFY layoutChanged)
 
 public:
@@ -41,6 +48,9 @@ public:
     bool shiftActive() const { return m_shift; }
     bool capsLock() const { return m_capsLock; }
     bool symbolMode() const { return m_symbolMode; }
+    bool controlActive() const { return m_control; }
+    bool optionActive() const { return m_option; }
+    bool commandActive() const { return m_command; }
     QString layout() const { return m_layout; }
     QString layoutLabel() const { return m_layoutLabel; }
     QStringList suggestions() const { return m_suggestions; }
@@ -55,6 +65,8 @@ public:
     // Named control key: backspace/enter/tab/escape/delete/space/up/down/left/right.
     Q_INVOKABLE void sendSpecial(const QString &name);
     Q_INVOKABLE void toggleShift();
+    // Arm/disarm one latched modifier: "control", "option" or "command".
+    Q_INVOKABLE void toggleModifier(const QString &name);
     Q_INVOKABLE void toggleCapsLock();
     Q_INVOKABLE void toggleSymbolMode();
     // Switch fcitx5 to the next input method configured in the current group.
@@ -70,11 +82,16 @@ signals:
     void shiftActiveChanged();
     void capsLockChanged();
     void symbolModeChanged();
+    void modifiersChanged();
     void layoutChanged();
     void suggestionsChanged();
 
 private:
     void initBackend();
+    // Evdev keycodes of the currently latched modifiers, and their release
+    // after a key has been sent with them.
+    QList<int> heldModifiers() const;
+    void clearModifiers();
     void setVisible(bool v);
     // Regenerate m_generatedRows for the active IM (keyboard-* only).
     void regenerateLayout();
@@ -107,6 +124,9 @@ private:
     bool m_shift = false;
     bool m_capsLock = false;
     bool m_symbolMode = false;
+    bool m_control = false;   // ⌃ latched
+    bool m_option = false;    // ⌥ latched
+    bool m_command = false;   // ⌘ latched
     QString m_layout;       // active IM unique name, e.g. "keyboard-ru"
     QString m_layoutLabel;  // its short display code, e.g. "ru"
 

@@ -37,9 +37,14 @@ bool SettingsBridge::longPressSymbols() const
     return SkvirtSettings::self()->longPressSymbols();
 }
 
-bool SettingsBridge::numbersRow() const
+bool SettingsBridge::functionRow() const
 {
-    return SkvirtSettings::self()->numbersRow();
+    return SkvirtSettings::self()->functionRow();
+}
+
+int SettingsBridge::theme() const
+{
+    return SkvirtSettings::self()->theme();
 }
 
 void SettingsBridge::reload()
@@ -50,7 +55,8 @@ void SettingsBridge::reload()
     const bool oldHideOnMouse = settings->hideOnMouseMove();
     const bool oldAutosuggestions = settings->showAutosuggestions();
     const bool oldLongPress = settings->longPressSymbols();
-    const bool oldNumbersRow = settings->numbersRow();
+    const bool oldFunctionRow = settings->functionRow();
+    const int oldTheme = settings->theme();
 
     settings->load();
 
@@ -62,6 +68,8 @@ void SettingsBridge::reload()
         emit showAutosuggestionsChanged();
     if (settings->longPressSymbols() != oldLongPress)
         emit longPressSymbolsChanged();
-    if (settings->numbersRow() != oldNumbersRow)
-        emit numbersRowChanged();
+    if (settings->functionRow() != oldFunctionRow)
+        emit functionRowChanged();
+    if (settings->theme() != oldTheme)
+        emit themeChanged();
 }

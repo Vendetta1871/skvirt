@@ -69,7 +69,11 @@ static bool specialKey(const QString &name, int &keycode)
     static const QHash<QString, int> t = {
         {"space", 57},  {"backspace", 14}, {"tab", 15},   {"enter", 28},
         {"escape", 1},  {"delete", 111},   {"left", 105}, {"up", 103},
-        {"right", 106}, {"down", 108},
+        {"right", 106}, {"down", 108},     {"capslock", 58},
+        // Function row (KEY_F1..KEY_F10 are contiguous, F11/F12 are not).
+        {"f1", 59},  {"f2", 60},  {"f3", 61},  {"f4", 62},  {"f5", 63},
+        {"f6", 64},  {"f7", 65},  {"f8", 66},  {"f9", 67},  {"f10", 68},
+        {"f11", 87}, {"f12", 88},
     };
     auto it = t.constFind(name.toLower());
     if (it == t.constEnd())
@@ -83,12 +87,15 @@ static bool specialKey(const QString &name, int &keycode)
 static bool evdevForKeyName(const QString &name, int &keycode)
 {
     static const QHash<QString, int> t = {
+        {"`", 41}, {"1", 2},  {"2", 3},  {"3", 4},  {"4", 5},  {"5", 6},
+        {"6", 7},  {"7", 8},  {"8", 9},  {"9", 10}, {"0", 11}, {"-", 12},
+        {"=", 13},
         {"q", 16}, {"w", 17}, {"e", 18}, {"r", 19}, {"t", 20}, {"y", 21},
         {"u", 22}, {"i", 23}, {"o", 24}, {"p", 25}, {"[", 26}, {"]", 27},
         {"a", 30}, {"s", 31}, {"d", 32}, {"f", 33}, {"g", 34}, {"h", 35},
         {"j", 36}, {"k", 37}, {"l", 38}, {";", 39}, {"'", 40},
         {"z", 44}, {"x", 45}, {"c", 46}, {"v", 47}, {"b", 48}, {"n", 49},
-        {"m", 50}, {",", 51}, {".", 52}, {"/", 53},
+        {"m", 50}, {",", 51}, {".", 52}, {"/", 53}, {"\\", 43},
     };
     auto it = t.constFind(name);
     if (it == t.constEnd())
@@ -213,7 +220,7 @@ void KeyboardController::commitText(const QString &text)
     if (physKeyForChar(ch, pk)) {
         // Inject the US-position key; the active fcitx layout/engine decides
         // the actual output (latin, cyrillic, pinyin composition, …).
-        m_kbd->tap(pk.keycode, pk.shift);
+        m_kbd->tap(pk.keycode, pk.shift, heldModifiers());
     } else {
         // No US-layout key produces this character (accents, CJK, …): route
         // it through fcitx5's unicode addon instead of dropping it.
@@ -226,6 +233,7 @@ void KeyboardController::commitText(const QString &text)
         m_shift = false;
         emit shiftActiveChanged();
     }
+    clearModifiers();
 }
 
 void KeyboardController::commitKeyAt(const QString &keyName, bool shifted, const QString &producedChar)
@@ -238,7 +246,7 @@ void KeyboardController::commitKeyAt(const QString &keyName, bool shifted, const
         // Inject the physical key at this position; the active fcitx layout
         // decides the actual character, so non-US letters (ü, é, й, …) work
         // without a char→key mapping.
-        m_kbd->tap(keycode, shifted);
+        m_kbd->tap(keycode, shifted, heldModifiers());
     } else {
         // Unknown positional name: fall back to the character path.
         commitText(producedChar);
@@ -254,6 +262,7 @@ void KeyboardController::commitKeyAt(const QString &keyName, bool shifted, const
         m_shift = false;
         emit shiftActiveChanged();
     }
+    clearModifiers();
 }
 
 void KeyboardController::regenerateLayout()
@@ -277,7 +286,12 @@ void KeyboardController::sendSpecial(const QString &name)
         qWarning() << "skvirt: unknown special key:" << name;
         return;
     }
-    m_kbd->tap(keycode, false);
+    m_kbd->tap(keycode, m_shift, heldModifiers());
+    if (m_shift) {  // one-shot shift (⇧⇥, ⌘⇧↩, …)
+        m_shift = false;
+        emit shiftActiveChanged();
+    }
+    clearModifiers();
 
     // Keep the current-word buffer in sync with what the app received.
     const QString key = name.toLower();
@@ -358,6 +372,42 @@ void KeyboardController::toggleShift()
 {
     m_shift = !m_shift;
     emit shiftActiveChanged();
+}
+
+// Latched modifiers work like the one-shot shift: a tap arms them, the next
+// key is injected with them held, then they disarm. Evdev codes are spelled
+// out to keep this file free of <linux/input.h>, as elsewhere here.
+QList<int> KeyboardController::heldModifiers() const
+{
+    QList<int> mods;
+    if (m_control)
+        mods << 29;   // KEY_LEFTCTRL
+    if (m_option)
+        mods << 56;   // KEY_LEFTALT
+    if (m_command)
+        mods << 125;  // KEY_LEFTMETA
+    return mods;
+}
+
+void KeyboardController::clearModifiers()
+{
+    if (!m_control && !m_option && !m_command)
+        return;
+    m_control = m_option = m_command = false;
+    emit modifiersChanged();
+}
+
+void KeyboardController::toggleModifier(const QString &name)
+{
+    if (name == QLatin1String("control"))
+        m_control = !m_control;
+    else if (name == QLatin1String("option"))
+        m_option = !m_option;
+    else if (name == QLatin1String("command"))
+        m_command = !m_command;
+    else
+        return;
+    emit modifiersChanged();
 }
 
 void KeyboardController::toggleCapsLock()

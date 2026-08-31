@@ -62,10 +62,16 @@ void UinputKeyboard::emitEvent(int type, int code, int value)
         qWarning() << "skvirt: uinput write failed";
 }
 
-void UinputKeyboard::tap(int keycode, bool shift)
+void UinputKeyboard::tap(int keycode, bool shift, const QList<int> &held)
 {
     if (m_fd < 0)
         return;
+    // Modifiers go down first (Shift last, so a Shift-producing character and
+    // a latched Ctrl/Alt/Meta combine as the app expects) and up in reverse.
+    for (int mod : held) {
+        emitEvent(EV_KEY, mod, 1);
+        emitEvent(EV_SYN, SYN_REPORT, 0);
+    }
     if (shift) {
         emitEvent(EV_KEY, KEY_LEFTSHIFT, 1);
         emitEvent(EV_SYN, SYN_REPORT, 0);
@@ -76,6 +82,10 @@ void UinputKeyboard::tap(int keycode, bool shift)
     emitEvent(EV_SYN, SYN_REPORT, 0);
     if (shift) {
         emitEvent(EV_KEY, KEY_LEFTSHIFT, 0);
+        emitEvent(EV_SYN, SYN_REPORT, 0);
+    }
+    for (auto it = held.crbegin(); it != held.crend(); ++it) {
+        emitEvent(EV_KEY, *it, 0);
         emitEvent(EV_SYN, SYN_REPORT, 0);
     }
 }
