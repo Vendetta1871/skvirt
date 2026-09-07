@@ -207,9 +207,9 @@ Rectangle {
         return m > 0 ? m : 15
     }
 
-    // Header strip: the hide button, and the suggestion pills when there are
-    // any. Sized off the screen rather than off the keys, so the key unit
-    // below can be derived from it without a binding loop.
+    // Header strip: the layout label, plus the suggestion pills below when
+    // there are any. Sized off the screen rather than off the keys, so the
+    // key unit below can be derived from it without a binding loop.
     readonly property bool barVisible: Settings.showAutosuggestions
                                     && KeyboardController.suggestions.length > 0
     readonly property real barH: Math.max(30, Math.round(Screen.height * 0.033))
@@ -281,7 +281,8 @@ Rectangle {
             anchors.margins: root.bodyPad
             spacing: root.rowSpacing
 
-            // Header: suggestions in the middle, hide button on the right.
+            // Header: the layout label on the left. (Visibility is toggled
+            // from the system tray.)
             Item {
                 width: parent.width
                 height: root.headerH
@@ -296,33 +297,6 @@ Rectangle {
                     font.family: pal.fontFamily
                     font.pixelSize: Math.round(root.headerH * 0.6)
                     renderType: Text.NativeRendering
-                }
-
-                Rectangle {
-                    id: hideButton
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.round(root.headerH * 1.6)
-                    height: Math.round(root.headerH * 0.85)
-                    radius: height / 2
-                    color: hideArea.pressed ? pal.accent : pal.pill
-                    border.color: pal.pillBorder
-                    border.width: 1
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "▾"
-                        color: hideArea.pressed ? pal.accentText : pal.subText
-                        font.family: pal.fontFamily
-                        font.pixelSize: Math.round(parent.height * 0.7)
-                        renderType: Text.NativeRendering
-                    }
-
-                    MouseArea {
-                        id: hideArea
-                        anchors.fill: parent
-                        onClicked: KeyboardController.hidePanel()
-                    }
                 }
             }
 

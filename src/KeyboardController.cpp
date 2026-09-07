@@ -445,8 +445,22 @@ void KeyboardController::cycleLayout()
 
 void KeyboardController::hidePanel()
 {
-    // Manual dismiss (▼): drop touch mode so it doesn't immediately reappear
+    // Manual dismiss: drop touch mode so it doesn't immediately reappear
     // while the same field keeps focus — the user asks again by tapping it.
     m_touchMode = false;
     hideKeyboard();
+}
+
+void KeyboardController::togglePanel()
+{
+    if (m_visible) {
+        hidePanel();
+        return;
+    }
+    // Manual summon: pretend the last interaction was a touch tap so the
+    // auto-hide engine treats the panel as wanted, and bypass the
+    // tablet-mode gate of showKeyboard() — the user asked explicitly.
+    m_touchMode = true;
+    qDebug() << "skvirt: SHOW (tray toggle)";
+    setVisible(true);
 }

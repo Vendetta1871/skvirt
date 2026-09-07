@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml DBus)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml DBus Widgets)
 find_package(LayerShellQt REQUIRED)
 find_package(KF6Config REQUIRED)
 find_package(KF6CoreAddons REQUIRED)
@@ -51,6 +51,7 @@ target_link_libraries(skvirt PRIVATE
     Qt6::Quick
     Qt6::Qml
     Qt6::DBus
+    Qt6::Widgets
     LayerShellQt::Interface
     KF6::ConfigCore
     KF6::ConfigGui

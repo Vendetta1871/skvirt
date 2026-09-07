@@ -21,6 +21,13 @@ Kirigami.FormLayout {
     }
 
     QQC2.CheckBox {
+        id: trayIconCheck
+        text: i18n("Show an icon in the system tray")
+        checked: kcm.settings.showTrayIcon
+        onToggled: kcm.settings.showTrayIcon = checked
+    }
+
+    QQC2.CheckBox {
         id: autosuggestionsCheck
         text: i18n("Show autosuggestions")
         checked: kcm.settings.showAutosuggestions

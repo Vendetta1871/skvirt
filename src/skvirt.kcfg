@@ -12,6 +12,10 @@
             <label>Hide when mouse is moved</label>
             <default>true</default>
         </entry>
+        <entry name="showTrayIcon" type="Bool">
+            <label>Show an icon in the system tray</label>
+            <default>true</default>
+        </entry>
         <entry name="showAutosuggestions" type="Bool">
             <label>Show autosuggestions</label>
             <default>true</default>

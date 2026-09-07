@@ -74,8 +74,11 @@ public:
     // Accept suggestion #index from the bar: completes the word (hunspell
     // backend) or commits the hanzi candidate (pinyin backend).
     Q_INVOKABLE void commitSuggestion(int index);
-    // Manual hide (▼ button): also tells fcitx5.
+    // Manual hide: drops touch mode so the panel doesn't immediately reappear.
     Q_INVOKABLE void hidePanel();
+    // Manual toggle (tray icon): shows the panel even when the auto engine
+    // wouldn't (no touch activity, tablet-mode gate), hides it otherwise.
+    Q_INVOKABLE void togglePanel();
 
 signals:
     void panelVisibleChanged();
