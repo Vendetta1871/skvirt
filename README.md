@@ -32,6 +32,11 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
   dictionaries for Latin/Cyrillic layouts, and **libime pinyin candidates**
   (the same engine and data as fcitx5-pinyin) when a Chinese IM is active.
   Tapping a pinyin candidate commits the hanzi directly.
+- **Voice input via whisper.cpp (optional):** tap `space`, then press-and-hold
+  it to dictate — recording runs while you hold, releasing transcribes and
+  types the text. Talks over HTTP to a `whisper-server` (default
+  `http://127.0.0.1:8080`); with no server running the 🎤 corner hint on the
+  space bar stays hidden and the gesture only shows a short note.
 - **Layout generator:** the on-screen rows are generated at runtime from the
   active IM's xkb symbols (`/usr/share/X11/xkb/symbols/*`), so any
   `keyboard-XX` layout (de, fr, …) shows the right legends on all four typing
@@ -55,7 +60,7 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
 ## Requirements
 
 - KDE Plasma 6 / KWin on Wayland
-- Qt 6 (Core, Gui, Quick, Qml, DBus)
+- Qt 6 (Core, Gui, Quick, Qml, DBus, Network, Multimedia)
 - LayerShellQt
 - KF6: Config, CoreAddons, I18n, KCMUtils (+ Kirigami at runtime, for the
   settings module)
@@ -63,6 +68,17 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
   suggestions; dictionaries `hunspell-en_us`, `hunspell-ru`, … install
   separately — without them only pinyin suggestions work)
 - fcitx5 as the active input method
+- *optional, for voice input:* **whisper.cpp** (Arch: `whisper-cpp`) running as `whisper-server`,
+  ideally with its Silero VAD so silence doesn't come back as hallucinated
+  text ("Thanks for watching!"):
+  `whisper-server -m ggml-large-v3-turbo.bin -l auto --vad -vm ggml-silero-v5.1.2.bin -vp 200`
+  (`-vp 200` pads speech by 200 ms instead of 30, so word edges aren't
+  clipped); a microphone, obviously
+- *optional:* **[fcitx5-commit](https://github.com/Vendetta1871/fcitx5-commit)**
+  (AUR `fcitx5-commit-git`) — lets skvirt insert dictated text, pinyin
+  candidates and characters the layout has no key for as one input-method
+  commit instead of key taps: instant and layout-independent. Without it
+  skvirt types them (slower; unicode entry for the rest)
 - The user must be in the **`input`** group (to read the touchscreen via evdev
   and to write to `/dev/uinput`):
 
@@ -106,6 +122,12 @@ Settings (or run it from the build tree:
   the held number row when the function row is off.
 - **Function key row** — `esc` and F1–F12 on top; the panel keeps its height
   budget, so the keys shrink to make room.
+- **Voice input** — tap `space`, then press-and-hold it to dictate. Needs a
+  `whisper-server` reachable at the configured address (its default port
+  8080). **Speech language** `auto` detects the language per take, a code
+  like `ru` pins it; left empty, the server's own `-l` applies — `en` unless
+  started otherwise. The 🎤 hint on the space bar only appears while the
+  server answers.
 - **Appearance** — light, dark, or follow the system colour scheme.
 
 ![skvirt settings page in System Settings](screenshots/settings.png)
@@ -135,6 +157,12 @@ Settings (or run it from the build tree:
   font fallback) every key paints from.
 - `SettingsBridge` + `kcm/` — KConfigXT settings (`skvirtrc`) shared with a
   KQuickManagedConfigModule KCM; `KConfigWatcher` reloads them live.
+- `VoiceInput` — push-to-talk dictation: records the microphone with Qt
+  Multimedia (16 kHz mono PCM wrapped in WAV) and POSTs the clip to
+  `whisper-server`'s `/inference`; the transcript is committed through
+  fcitx5-commit when it's installed, else typed on the keys of the active
+  layout (looked up from the generated rows), with the unicode path for
+  characters the layout has no key for.
 
 ## Limitations
 

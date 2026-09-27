@@ -164,3 +164,18 @@ void FcitxIm::setCurrentIM(const QString &uniqueName)
     QDBusInterface iface(kService, kPath, kIface, QDBusConnection::sessionBus());
     iface.asyncCall(QStringLiteral("SetCurrentIM"), uniqueName);
 }
+
+bool FcitxIm::commitString(const QString &text) const
+{
+    // A bare method call, not QDBusInterface: that one introspects the object
+    // first, a wasted round-trip (and a warning) whenever the addon is absent.
+    QDBusMessage call = QDBusMessage::createMethodCall(
+        QLatin1String(kService), QStringLiteral("/commit"),
+        QStringLiteral("io.github.vendetta1871.Commit1"), QStringLiteral("CommitString"));
+    call << text;
+    // fcitx answers in well under a millisecond; a hung fcitx must not freeze
+    // the panel for QtDBus' default 25 s.
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(call, QDBus::Block, 500);
+    return reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()
+        && reply.arguments().at(0).toBool();
+}

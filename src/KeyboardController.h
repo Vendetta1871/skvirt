@@ -14,6 +14,11 @@ class InputMonitor;
 class KWinVk;
 class FcitxIm;
 class SuggestionEngine;
+class VoiceInput;
+
+// Physical key info: evdev keycode and whether Shift is held to produce the
+// character.
+struct PhysKey { int keycode; bool shift; };
 
 // QML singleton — turns key taps into fcitx5 key events over D-Bus.
 class KeyboardController : public QObject
@@ -34,6 +39,12 @@ class KeyboardController : public QObject
     Q_PROPERTY(QString layout READ layout NOTIFY layoutChanged)
     Q_PROPERTY(QString layoutLabel READ layoutLabel NOTIFY layoutChanged)
     Q_PROPERTY(QStringList suggestions READ suggestions NOTIFY suggestionsChanged)
+    // Voice input (whisper.cpp): "idle" | "recording" | "processing" | "error".
+    // voiceMessage carries the detail text for the error state.
+    Q_PROPERTY(QString voiceState READ voiceState NOTIFY voiceStateChanged)
+    Q_PROPERTY(QString voiceMessage READ voiceMessage NOTIFY voiceStateChanged)
+    // Whether a whisper-server answered the last health probe.
+    Q_PROPERTY(bool voiceAvailable READ voiceAvailable NOTIFY voiceAvailableChanged)
     // Typing rows generated from the active IM's xkb layout (4 rows of
     // [keyName, label, shiftLabel, width]: number row + the three letter
     // rows); empty when the active IM is not a keyboard-* IM or generation
@@ -54,6 +65,9 @@ public:
     QString layout() const { return m_layout; }
     QString layoutLabel() const { return m_layoutLabel; }
     QStringList suggestions() const { return m_suggestions; }
+    QString voiceState() const { return m_voiceState; }
+    QString voiceMessage() const { return m_voiceMessage; }
+    bool voiceAvailable() const { return m_voiceAvailable; }
     QVariantList generatedRows() const { return m_generatedRows; }
 
     // Printable key: send the resolved character (case/symbol already applied in QML).
@@ -79,6 +93,12 @@ public:
     // Manual toggle (tray icon): shows the panel even when the auto engine
     // wouldn't (no touch activity, tablet-mode gate), hides it otherwise.
     Q_INVOKABLE void togglePanel();
+    // Voice input gesture on the space bar (tap, then press-and-hold):
+    // start/stop recording; on stop the clip goes to whisper-server and the
+    // transcript is typed. cancel discards the take.
+    Q_INVOKABLE void startVoiceInput();
+    Q_INVOKABLE void stopVoiceInput();
+    Q_INVOKABLE void cancelVoiceInput();
 
 signals:
     void panelVisibleChanged();
@@ -88,6 +108,8 @@ signals:
     void modifiersChanged();
     void layoutChanged();
     void suggestionsChanged();
+    void voiceStateChanged();
+    void voiceAvailableChanged();
 
 private:
     void initBackend();
@@ -101,7 +123,15 @@ private:
 
     // Current-word buffer feeding the SuggestionEngine.
     void updateWordBuffer(QChar committed);
+    // Text no key on the active layout produces: one fcitx5-commit commit
+    // when the addon is there, else fcitx5's unicode addon per character.
+    void commitUnicode(const QString &text);
     void refreshSuggestions();
+
+    // Voice input: state machine + typing the transcript into the app.
+    void setVoiceState(const QString &state, const QString &message = {});
+    void voiceError(const QString &message);
+    void typeRecognizedText(const QString &text);
 
     // Auto show/hide decision engine (Windows-like touch behaviour).
     void showKeyboard();   // map + ensure fcitx VK backend loaded for key routing
@@ -116,12 +146,21 @@ private:
     std::unique_ptr<KWinVk> m_kwin;
     std::unique_ptr<FcitxIm> m_fcitx;
     std::unique_ptr<SuggestionEngine> m_engine;
+    std::unique_ptr<VoiceInput> m_voice;
 
     LayoutGenerator m_layoutGen;
     QVariantList m_generatedRows;
+    // Character -> key on the active keyboard-* layout, built from
+    // m_generatedRows for typing whole strings (voice input); empty for
+    // pinyin & co.
+    QHash<QChar, PhysKey> m_layoutKeys;
 
     QString m_word;              // current-word buffer (capped, see updateWordBuffer)
     QStringList m_suggestions;
+
+    QString m_voiceState = QStringLiteral("idle");
+    QString m_voiceMessage;      // detail text of the "error" state
+    bool m_voiceAvailable = false;
 
     bool m_visible = false;
     bool m_shift = false;

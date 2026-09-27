@@ -28,6 +28,18 @@
             <label>Function key row</label>
             <default>false</default>
         </entry>
+        <entry name="voiceInput" type="Bool">
+            <label>Voice input via whisper.cpp (double-tap and hold Space)</label>
+            <default>true</default>
+        </entry>
+        <entry name="whisperServerUrl" type="String">
+            <label>whisper-server address</label>
+            <default>http://127.0.0.1:8080</default>
+        </entry>
+        <entry name="whisperLanguage" type="String">
+            <label>Speech language passed to whisper ("auto" = detect, empty = the server's own -l)</label>
+            <default>auto</default>
+        </entry>
         <entry name="theme" type="Enum">
             <label>Colour theme</label>
             <choices>

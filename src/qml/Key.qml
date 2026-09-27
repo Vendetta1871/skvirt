@@ -44,11 +44,37 @@ Item {
 
     property bool pressed: false
 
+    // Voice-input gesture on the space bar: a quick tap (which types a space)
+    // followed by a press-and-hold within the double-tap window starts
+    // recording; releasing transcribes. The hold threshold is much shorter
+    // than the long-press one so dictation feels immediate.
+    readonly property int doubleTapWindow: 400
+    property double lastSpaceTap: 0        // timestamp of the last committed space tap
+    property bool spaceSecondPress: false  // current press arrived within the window
+    property bool voiceHoldActive: false   // hold threshold passed, recording is on
+    readonly property bool voiceRecording: keyName === "space"
+                                        && KeyboardController.voiceState === "recording"
+
+    // Arms the voice hold on the second space press. A plain Timer instead of
+    // onPressAndHold: the MouseArea starts its hold timer with the interval
+    // bound before spaceSecondPress updates, which would delay the trigger.
+    Timer {
+        interval: 300
+        running: root.pressed && root.spaceSecondPress && !root.voiceHoldActive
+        onTriggered: {
+            root.voiceHoldActive = true
+            root.longPressFired = true  // release must not commit a space
+            KeyboardController.startVoiceInput()
+        }
+    }
+
     readonly property real radius: Math.max(4, Math.round(height * 0.13))
-    readonly property color capColor: pressed || active ? theme.accent
+    readonly property color capColor: voiceRecording ? theme.recording
+                                    : pressed || active ? theme.accent
                                     : isFuncKey ? theme.funcKey
                                     : theme.key
-    readonly property color capText: pressed || active ? theme.accentText : theme.text
+    readonly property color capText: pressed || active || voiceRecording
+                                   ? theme.accentText : theme.text
 
     // ---- cap ---------------------------------------------------------------
 
@@ -133,6 +159,23 @@ Item {
             opacity: 0.75
             font.family: root.theme.fontFamily
             font.pixelSize: Math.round(root.height * (text.length > 1 ? 0.17 : 0.20))
+            renderType: Text.NativeRendering
+
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: Math.round(root.height * 0.09)
+        }
+
+        // The space bar hides the voice input: tap, then press-and-hold.
+        // Same corner-hint slot as the alternates, shown while a
+        // whisper-server answers its health probe.
+        Text {
+            visible: root.keyName === "space" && Settings.voiceInput
+                     && KeyboardController.voiceAvailable && !root.voiceRecording
+            text: "🎤"
+            color: root.pressed ? root.theme.accentText : root.theme.subText
+            opacity: 0.75
+            font.pixelSize: Math.round(root.height * 0.20)
             renderType: Text.NativeRendering
 
             anchors.top: parent.top
@@ -314,6 +357,10 @@ Item {
         onPressed: {
             root.pressed = true
             root.longPressFired = false
+            // Second quick press on the space bar? The hold timer arms the
+            // voice input; a fast release still types the second space.
+            root.spaceSecondPress = root.keyName === "space" && Settings.voiceInput
+                                 && (Date.now() - root.lastSpaceTap) < root.doubleTapWindow
         }
         onPressAndHold: {
             if (root.hasAlternates) {
@@ -334,6 +381,14 @@ Item {
         }
         onReleased: {
             root.pressed = false
+            if (root.voiceHoldActive) {
+                // Releasing the held space ends the take and sends it off
+                // to whisper-server for transcription.
+                root.voiceHoldActive = false
+                root.spaceSecondPress = false
+                KeyboardController.stopVoiceInput()
+                return
+            }
             if (root.longPressFired) {
                 var idx = root.popupIndexAt(mouse.x, mouse.y)
                 root.closePopup()
@@ -358,9 +413,17 @@ Item {
                 KeyboardController.commitKeyAt(root.keyName, root.upper, root.displayLabel)
             else
                 KeyboardController.commitText(root.displayLabel)
+            if (n === "space")
+                root.lastSpaceTap = Date.now()
+            root.spaceSecondPress = false
         }
         onCanceled: {
             root.pressed = false
+            if (root.voiceHoldActive) {
+                root.voiceHoldActive = false
+                KeyboardController.cancelVoiceInput()
+            }
+            root.spaceSecondPress = false
             root.closePopup()
         }
     }

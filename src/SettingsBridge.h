@@ -16,6 +16,8 @@ class SettingsBridge : public QObject
     Q_PROPERTY(bool showAutosuggestions READ showAutosuggestions NOTIFY showAutosuggestionsChanged)
     Q_PROPERTY(bool longPressSymbols READ longPressSymbols NOTIFY longPressSymbolsChanged)
     Q_PROPERTY(bool functionRow READ functionRow NOTIFY functionRowChanged)
+    // Voice input gesture on the space bar (whisper.cpp, see skvirt.kcfg).
+    Q_PROPERTY(bool voiceInput READ voiceInput NOTIFY voiceInputChanged)
     // 0 = follow the system colour scheme, 1 = light, 2 = dark.
     Q_PROPERTY(int theme READ theme NOTIFY themeChanged)
 
@@ -27,6 +29,7 @@ public:
     bool showAutosuggestions() const;
     bool longPressSymbols() const;
     bool functionRow() const;
+    bool voiceInput() const;
     int theme() const;
 
 signals:
@@ -35,6 +38,7 @@ signals:
     void showAutosuggestionsChanged();
     void longPressSymbolsChanged();
     void functionRowChanged();
+    void voiceInputChanged();
     void themeChanged();
 
 private:

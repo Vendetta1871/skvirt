@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml DBus Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml DBus Widgets Network Multimedia)
 find_package(LayerShellQt REQUIRED)
 find_package(KF6Config REQUIRED)
 find_package(KF6CoreAddons REQUIRED)
@@ -26,6 +26,7 @@ qt6_add_executable(skvirt
     src/LayoutGenerator.cpp
     src/SettingsBridge.cpp
     src/SuggestionEngine.cpp
+    src/VoiceInput.cpp
 )
 
 target_include_directories(skvirt PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
@@ -52,6 +53,8 @@ target_link_libraries(skvirt PRIVATE
     Qt6::Qml
     Qt6::DBus
     Qt6::Widgets
+    Qt6::Network
+    Qt6::Multimedia
     LayerShellQt::Interface
     KF6::ConfigCore
     KF6::ConfigGui

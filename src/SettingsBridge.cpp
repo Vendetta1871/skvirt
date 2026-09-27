@@ -42,6 +42,11 @@ bool SettingsBridge::functionRow() const
     return SkvirtSettings::self()->functionRow();
 }
 
+bool SettingsBridge::voiceInput() const
+{
+    return SkvirtSettings::self()->voiceInput();
+}
+
 int SettingsBridge::theme() const
 {
     return SkvirtSettings::self()->theme();
@@ -56,6 +61,7 @@ void SettingsBridge::reload()
     const bool oldAutosuggestions = settings->showAutosuggestions();
     const bool oldLongPress = settings->longPressSymbols();
     const bool oldFunctionRow = settings->functionRow();
+    const bool oldVoiceInput = settings->voiceInput();
     const int oldTheme = settings->theme();
 
     settings->load();
@@ -70,6 +76,8 @@ void SettingsBridge::reload()
         emit longPressSymbolsChanged();
     if (settings->functionRow() != oldFunctionRow)
         emit functionRowChanged();
+    if (settings->voiceInput() != oldVoiceInput)
+        emit voiceInputChanged();
     if (settings->theme() != oldTheme)
         emit themeChanged();
 }

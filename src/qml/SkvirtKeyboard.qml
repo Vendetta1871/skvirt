@@ -216,6 +216,11 @@ Rectangle {
     readonly property real headerH: Math.max(20, Math.round(Screen.height * 0.022))
     readonly property real barArea: barVisible ? barH + rowSpacing : 0
 
+    // Voice-input status strip (recording / transcribing / error note),
+    // shown in the same slot style as the suggestion bar while active.
+    readonly property bool voiceBarVisible: KeyboardController.voiceState !== "idle"
+    readonly property real voiceBarArea: voiceBarVisible ? barH + rowSpacing : 0
+
     // Key unit. The keys are square, as on a Mac keyboard, so the panel takes
     // whichever of the two limits is tighter: the width it may occupy, or the
     // height budget (the same ~38% of the screen the panel always used).
@@ -233,6 +238,7 @@ Rectangle {
 
     readonly property int bodyW: Math.round(maxFactor * unit - keySpacing + 2 * bodyPad)
     readonly property int bodyH: Math.round(2 * bodyPad + headerH + rowSpacing + barArea
+                                            + voiceBarArea
                                             + rowCount * unit + (rowCount - 1) * rowSpacing)
 
     // Long-press popup reserve: when a popup would stick out above the panel
@@ -297,6 +303,52 @@ Rectangle {
                     font.family: pal.fontFamily
                     font.pixelSize: Math.round(root.headerH * 0.6)
                     renderType: Text.NativeRendering
+                }
+            }
+
+            // Voice-input status: a pulsing dot while recording, then the
+            // state of the round-trip to whisper-server (or its error).
+            Item {
+                id: voiceBar
+                visible: root.voiceBarVisible
+                width: parent.width
+                height: root.barH
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    Rectangle {
+                        visible: KeyboardController.voiceState === "recording"
+                        width: Math.round(voiceBar.height * 0.3)
+                        height: width
+                        radius: width / 2
+                        color: pal.recording
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        SequentialAnimation on opacity {
+                            running: KeyboardController.voiceState === "recording"
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.2; duration: 600 }
+                            NumberAnimation { to: 1.0; duration: 600 }
+                        }
+                    }
+
+                    Text {
+                        text: {
+                            var s = KeyboardController.voiceState
+                            if (s === "recording")
+                                return "Listening… release Space to transcribe"
+                            if (s === "processing")
+                                return "Transcribing…"
+                            return KeyboardController.voiceMessage
+                        }
+                        color: pal.subText
+                        font.family: pal.fontFamily
+                        font.pixelSize: Math.round(voiceBar.height * 0.42)
+                        renderType: Text.NativeRendering
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
             }
 

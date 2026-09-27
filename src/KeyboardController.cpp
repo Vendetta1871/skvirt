@@ -4,19 +4,17 @@
 #include "KWinVk.h"
 #include "FcitxIm.h"
 #include "SuggestionEngine.h"
+#include "VoiceInput.h"
 
 #include "skvirt.h"  // generated SkvirtSettings (kconfig_add_kcfg_files)
 
 #include <QHash>
 #include <QDebug>
-
-// Physical key info: evdev keycode and whether Shift is needed to produce the
-// character on a US layout. We inject a hardware key via uinput, so fcitx's
-// active engine (keyboard layout, pinyin, …) processes it just like real input.
-struct PhysKey { int keycode; bool shift; };
+#include <QTimer>
 
 // Map a printable character to the US-layout physical (evdev) key that
-// produces it.
+// produces it. We inject a hardware key via uinput, so fcitx's active engine
+// (keyboard layout, pinyin, …) processes it just like real input.
 static bool physKeyForChar(QChar ch, PhysKey &out)
 {
     static const QHash<QChar, PhysKey> table = []{
@@ -119,6 +117,28 @@ void KeyboardController::initBackend()
     m_kwin  = std::make_unique<KWinVk>();
     m_fcitx = std::make_unique<FcitxIm>();
     m_engine = std::make_unique<SuggestionEngine>();
+    m_voice = std::make_unique<VoiceInput>();
+
+    connect(m_voice.get(), &VoiceInput::recordingStarted, this, [this] {
+        setVoiceState(QStringLiteral("recording"));
+    });
+    connect(m_voice.get(), &VoiceInput::recordingStopped, this, [this] {
+        setVoiceState(QStringLiteral("processing"));  // recognized/failed follow async
+    });
+    connect(m_voice.get(), &VoiceInput::recognized, this, [this](const QString &text) {
+        if (!text.isEmpty())
+            typeRecognizedText(text);
+        setVoiceState(QStringLiteral("idle"));
+    });
+    connect(m_voice.get(), &VoiceInput::failed, this,
+            [this](const QString &message) { voiceError(message); });
+    connect(m_voice.get(), &VoiceInput::availabilityChanged, this, [this](bool available) {
+        if (m_voiceAvailable == available)
+            return;
+        m_voiceAvailable = available;
+        emit voiceAvailableChanged();
+    });
+    m_voice->checkAvailability();
 
     // Reflect whatever IM fcitx5 is already active on, rather than assuming
     // English.
@@ -149,6 +169,12 @@ void KeyboardController::setVisible(bool v)
     if (m_visible == v)
         return;
     m_visible = v;
+    if (m_voice) {
+        if (v)
+            m_voice->checkAvailability();  // re-probe: the server may have (re)started
+        else
+            cancelVoiceInput();            // a hidden panel must not keep recording
+    }
     emit panelVisibleChanged();
 }
 
@@ -222,9 +248,9 @@ void KeyboardController::commitText(const QString &text)
         // the actual output (latin, cyrillic, pinyin composition, …).
         m_kbd->tap(pk.keycode, pk.shift, heldModifiers());
     } else {
-        // No US-layout key produces this character (accents, CJK, …): route
-        // it through fcitx5's unicode addon instead of dropping it.
-        m_kbd->typeUnicode(text);
+        // No US-layout key produces this character (accents, CJK, …): insert
+        // it as a commit instead of dropping it.
+        commitUnicode(text);
     }
 
     updateWordBuffer(ch);
@@ -265,9 +291,17 @@ void KeyboardController::commitKeyAt(const QString &keyName, bool shifted, const
     clearModifiers();
 }
 
+void KeyboardController::commitUnicode(const QString &text)
+{
+    if (m_fcitx && m_fcitx->commitString(text))
+        return;
+    m_kbd->typeUnicode(text);
+}
+
 void KeyboardController::regenerateLayout()
 {
     m_generatedRows.clear();
+    m_layoutKeys.clear();
     // Non-keyboard IMs (pinyin, …) compose from latin letters on a QWERTY
     // panel; an empty generatedRows keeps QML on its hardcoded fallback.
     if (!m_fcitx || !m_layout.startsWith(QLatin1String("keyboard-")))
@@ -275,6 +309,23 @@ void KeyboardController::regenerateLayout()
     const QString xkbLayout = m_fcitx->layoutForIM(m_layout);
     if (!xkbLayout.isEmpty())
         m_generatedRows = m_layoutGen.generate(xkbLayout);
+
+    // The same rows read backwards: which key (and shift level) types a
+    // given character on this layout.
+    for (const QVariant &row : std::as_const(m_generatedRows)) {
+        for (const QVariant &entry : row.toList()) {
+            const QVariantList key = entry.toList();  // [keyName, label, shiftLabel, width]
+            int keycode;
+            if (key.size() < 3 || !evdevForKeyName(key.at(0).toString(), keycode))
+                continue;
+            const QString label = key.at(1).toString();
+            const QString shiftLabel = key.at(2).toString();
+            if (label.size() == 1 && !m_layoutKeys.contains(label.at(0)))
+                m_layoutKeys.insert(label.at(0), {keycode, false});
+            if (shiftLabel.size() == 1 && !m_layoutKeys.contains(shiftLabel.at(0)))
+                m_layoutKeys.insert(shiftLabel.at(0), {keycode, true});
+        }
+    }
 }
 
 void KeyboardController::sendSpecial(const QString &name)
@@ -349,8 +400,11 @@ void KeyboardController::commitSuggestion(int index)
         // injected, then the candidate is committed through the unicode addon.
         // Tradeoff: fcitx never sees this selection, so its frequency/history
         // learning is not updated by bar taps — accepted for now.
+        // The escape (uinput) and the commit (D-Bus) take separate paths and
+        // may reach fcitx in either order; both are fine, as the preedit is
+        // dropped by the escape and the commit goes around the engine.
         m_kbd->tap(1, false);  // escape
-        m_kbd->typeUnicode(candidate);
+        commitUnicode(candidate);
         m_word.clear();
     } else {
         // Type only the missing tail (common prefix with the buffer is already
@@ -360,9 +414,13 @@ void KeyboardController::commitSuggestion(int index)
                && candidate.at(common).toLower() == m_word.at(common).toLower())
             ++common;
         const QString tail = candidate.mid(common);
-        for (const QChar ch : tail)
-            commitText(QString(ch));  // reuses the physKey / unicode path
-        m_kbd->tap(57, false);        // space
+        // In one commit when possible: mixing key taps with commits here
+        // could reorder characters, the two reach fcitx by different paths.
+        if (!m_fcitx || !m_fcitx->commitString(tail + QLatin1Char(' '))) {
+            for (const QChar ch : tail)
+                commitText(QString(ch));  // reuses the physKey / unicode path
+            m_kbd->tap(57, false);        // space
+        }
         m_word.clear();
     }
     refreshSuggestions();
@@ -463,4 +521,111 @@ void KeyboardController::togglePanel()
     m_touchMode = true;
     qDebug() << "skvirt: SHOW (tray toggle)";
     setVisible(true);
+}
+
+// ---- voice input (whisper.cpp) ---------------------------------------------
+
+void KeyboardController::setVoiceState(const QString &state, const QString &message)
+{
+    if (m_voiceState == state && m_voiceMessage == message)
+        return;
+    m_voiceState = state;
+    m_voiceMessage = message;
+    emit voiceStateChanged();
+}
+
+void KeyboardController::voiceError(const QString &message)
+{
+    qWarning() << "skvirt: voice input:" << message;
+    setVoiceState(QStringLiteral("error"), message);
+    // Show the note briefly, then fall back to idle on its own.
+    QTimer::singleShot(3500, this, [this] {
+        if (m_voiceState == QLatin1String("error"))
+            setVoiceState(QStringLiteral("idle"));
+    });
+}
+
+void KeyboardController::startVoiceInput()
+{
+    if (!m_voice || m_voiceState != QLatin1String("idle"))
+        return;
+    if (!SkvirtSettings::self()->voiceInput())
+        return;
+    // Fail fast rather than record a whole take that has nowhere to go. The
+    // re-probe picks up a server started since the panel appeared, so the
+    // next attempt works.
+    if (!m_voiceAvailable) {
+        m_voice->checkAvailability();
+        voiceError(QStringLiteral("whisper-server not reachable at %1")
+                       .arg(SkvirtSettings::self()->whisperServerUrl()));
+        return;
+    }
+    if (!m_voice->startRecording())
+        voiceError(QStringLiteral("no microphone available"));
+}
+
+void KeyboardController::stopVoiceInput()
+{
+    if (!m_voice || !m_voice->recording())
+        return;
+    m_voice->stopRecording();  // → recordingStopped → "processing"
+}
+
+void KeyboardController::cancelVoiceInput()
+{
+    if (!m_voice)
+        return;
+    m_voice->cancelRecording();
+    if (m_voiceState != QLatin1String("idle"))
+        setVoiceState(QStringLiteral("idle"));
+}
+
+// Insert the transcript: in one commit through the fcitx5-commit addon when
+// it's installed. Otherwise it is typed: whatever the active layout has a key
+// for goes through the fast uinput tap path at that key's position — looked
+// up on the layout itself, not on US positions, since what a key types
+// depends on the layout: Russian speech on a US layout must not come out as
+// "ghbdtn", and "." is not on the US period key under ЙЦУКЕН. The rest
+// (other scripts, CJK, everything under pinyin & co.) falls back to fcitx5's
+// unicode addon.
+void KeyboardController::typeRecognizedText(const QString &text)
+{
+    if (!m_kbd)
+        return;
+
+    // Best case: the whole transcript in one commit through fcitx5-commit.
+    if (m_fcitx && m_fcitx->commitString(text)) {
+        qDebug() << "skvirt: voice input: committed" << text.size() << "chars via fcitx5-commit";
+        m_word.clear();
+        refreshSuggestions();
+        return;
+    }
+
+    QString unicodeRun;  // pending characters for the slow unicode path
+    const auto flushUnicode = [&] {
+        if (!unicodeRun.isEmpty()) {
+            m_kbd->typeUnicode(unicodeRun);
+            unicodeRun.clear();
+        }
+    };
+
+    for (const QChar ch : text) {
+        const auto key = m_layoutKeys.constFind(ch);
+        if (ch.isSpace()) {
+            flushUnicode();
+            m_kbd->tap(57, false);  // space (VoiceInput already folded newlines)
+        } else if (key != m_layoutKeys.constEnd()) {
+            flushUnicode();
+            m_kbd->tap(key->keycode, key->shift);
+        } else {
+            unicodeRun += ch;
+        }
+    }
+    flushUnicode();
+    // Length only: the dictated text itself stays out of the journal.
+    qDebug() << "skvirt: voice input: typed" << text.size() << "chars";
+
+    // The dictated text is not a word being typed — drop the stale prefix.
+    m_word.clear();
+    refreshSuggestions();
 }

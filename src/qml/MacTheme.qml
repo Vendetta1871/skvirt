@@ -51,6 +51,9 @@ QtObject {
     readonly property color accent:     dark ? "#0A84FF" : "#007AFF"
     readonly property color capsLight:  dark ? "#30D158" : "#28CD41"
 
+    // Apple system red: the space bar cap while voice input is recording.
+    readonly property color recording:  dark ? "#FF453A" : "#FF3B30"
+
     // Long-press strip and suggestion pills.
     readonly property color popup:       dark ? "#FA3A3A3D" : "#FAF7F7F8"
     readonly property color popupItem:   dark ? "#54545A" : "#FFFFFF"

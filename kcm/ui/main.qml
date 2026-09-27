@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as QQC2
+import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
 Kirigami.FormLayout {
@@ -56,6 +57,39 @@ Kirigami.FormLayout {
         font: Kirigami.Theme.smallFont
         opacity: 0.7
         enabled: !functionRowCheck.checked && longPressCheck.checked
+    }
+
+    QQC2.CheckBox {
+        id: voiceInputCheck
+        Kirigami.FormData.label: i18n("Voice input:")
+        text: i18n("Tap Space, then press-and-hold it to dictate")
+        checked: kcm.settings.voiceInput
+        onToggled: kcm.settings.voiceInput = checked
+    }
+
+    QQC2.TextField {
+        id: whisperUrlField
+        Kirigami.FormData.label: i18n("whisper-server:")
+        enabled: voiceInputCheck.checked
+        text: kcm.settings.whisperServerUrl
+        onEditingFinished: kcm.settings.whisperServerUrl = text
+        Layout.fillWidth: true
+    }
+
+    QQC2.TextField {
+        id: whisperLanguageField
+        Kirigami.FormData.label: i18n("Speech language:")
+        enabled: voiceInputCheck.checked
+        text: kcm.settings.whisperLanguage
+        onEditingFinished: kcm.settings.whisperLanguage = text
+        Layout.fillWidth: true
+    }
+
+    QQC2.Label {
+        text: i18n("Requires whisper.cpp's whisper-server (default port 8080). \"auto\" detects the language, a code like \"ru\" pins it; empty uses the server's own -l (\"en\" by default).")
+        font: Kirigami.Theme.smallFont
+        opacity: 0.7
+        enabled: voiceInputCheck.checked
     }
 
     QQC2.ComboBox {

@@ -36,6 +36,13 @@ public:
     // Fire-and-forget switch; does not wait for fcitx5 to finish applying it.
     void setCurrentIM(const QString &uniqueName);
 
+    // Insert `text` into the focused field in one piece, as an input method
+    // commit — layout-independent, no key events. Needs the fcitx5-commit
+    // addon (https://github.com/Vendetta1871/fcitx5-commit); false when it
+    // isn't installed or no field has fcitx focus, so callers fall back to
+    // typing keys.
+    bool commitString(const QString &text) const;
+
 private:
     void ensureLabelCache();
 
