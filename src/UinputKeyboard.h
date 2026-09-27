@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -32,5 +33,11 @@ public:
 
 private:
     void emitEvent(int type, int code, int value);
+    // Called before writing `upcoming` events: pauses a long burst so the
+    // reader can drain the kernel's small per-reader buffer (see the .cpp).
+    void pace(int upcoming);
+
     int m_fd = -1;
+    int m_queued = 0;             // events written since the reader last had time to drain
+    QElapsedTimer m_sinceWrite;   // time since the last event write
 };

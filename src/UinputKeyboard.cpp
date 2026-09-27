@@ -11,6 +11,19 @@
 #include <linux/uinput.h>
 #include <cstring>
 
+namespace {
+// The kernel gives each reader of this device (KWin's libinput) a buffer of
+// only 64 events: 8 packets × the 8 events evdev budgets for a plain
+// keyboard (evdev_compute_buffer_size). A reader that falls behind gets
+// SYN_DROPPED, and every key in between is silently lost. One tap is 4–20
+// events, so a burst — a dictated sentence, a suggestion tail — written in a
+// tight loop overflows it whenever KWin is busy for a moment (say, compositing
+// the characters that just arrived). Bursts therefore pause after a slice of
+// the buffer; a stall would have to outlast ~2.5 slices to lose anything.
+constexpr int kBurstEvents = 24;
+constexpr int kDrainMs = 10;
+}
+
 UinputKeyboard::UinputKeyboard(QObject *parent) : QObject(parent)
 {
     m_fd = ::open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
@@ -60,12 +73,27 @@ void UinputKeyboard::emitEvent(int type, int code, int value)
     ev.value = value;
     if (::write(m_fd, &ev, sizeof ev) < 0)
         qWarning() << "skvirt: uinput write failed";
+    ++m_queued;
+    m_sinceWrite.start();
+}
+
+void UinputKeyboard::pace(int upcoming)
+{
+    // Quiet for a drain interval already (a human typing): nothing is queued.
+    if (m_sinceWrite.isValid() && m_sinceWrite.elapsed() >= kDrainMs)
+        m_queued = 0;
+    if (m_queued > 0 && m_queued + upcoming > kBurstEvents) {
+        QThread::msleep(kDrainMs);
+        m_queued = 0;
+    }
 }
 
 void UinputKeyboard::tap(int keycode, bool shift, const QList<int> &held)
 {
     if (m_fd < 0)
         return;
+    // Down + SYN and up + SYN for the key, each held modifier and Shift.
+    pace(4 + 4 * int(shift) + 4 * int(held.size()));
     // Modifiers go down first (Shift last, so a Shift-producing character and
     // a latched Ctrl/Alt/Meta combine as the app expects) and up in reverse.
     for (int mod : held) {
@@ -117,6 +145,7 @@ void UinputKeyboard::typeUnicode(const QString &text)
         // entry, Enter commits the codepoint. Do NOT use the Ctrl+Alt+Shift+U
         // trigger — that opens search-by-name mode, where typed hex is a
         // search query and Enter picks an arbitrary match.
+        pace(10);  // the chord below, U tap included
         emitEvent(EV_KEY, KEY_LEFTCTRL, 1);
         emitEvent(EV_KEY, KEY_LEFTSHIFT, 1);
         emitEvent(EV_SYN, SYN_REPORT, 0);
