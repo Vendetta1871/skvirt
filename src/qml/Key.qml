@@ -52,6 +52,7 @@ Item {
     property double lastSpaceTap: 0        // timestamp of the last committed space tap
     property bool spaceSecondPress: false  // current press arrived within the window
     property bool voiceHoldActive: false   // hold threshold passed, recording is on
+    property int voiceGestureSpaces: 0     // spaces the arming taps typed (eaten on record)
     readonly property bool voiceRecording: keyName === "space"
                                         && KeyboardController.voiceState === "recording"
 
@@ -64,8 +65,34 @@ Item {
         onTriggered: {
             root.voiceHoldActive = true
             root.longPressFired = true  // release must not commit a space
+            // The quick taps that armed the gesture typed spaces; dictation
+            // should land in the text untouched by them.
+            for (var i = 0; i < root.voiceGestureSpaces; i++)
+                KeyboardController.sendSpecial("backspace")
+            root.voiceGestureSpaces = 0
             KeyboardController.startVoiceInput()
         }
+    }
+
+    // Typematic backspace: hold ⌫ and, past the hold threshold, it keeps
+    // deleting until the finger lifts — like a real keyboard's key repeat.
+    // Backspace has no long-press alternates, so nothing else competes here.
+    property bool backspaceRepeatActive: false
+
+    Timer {
+        interval: 400
+        running: root.pressed && root.keyName === "backspace"
+        onTriggered: {
+            root.longPressFired = true      // release must not commit a second one
+            root.backspaceRepeatActive = true
+        }
+    }
+
+    Timer {
+        interval: 55
+        repeat: true
+        running: root.backspaceRepeatActive
+        onTriggered: KeyboardController.sendSpecial("backspace")
     }
 
     readonly property real radius: Math.max(4, Math.round(height * 0.13))
@@ -381,6 +408,7 @@ Item {
         }
         onReleased: {
             root.pressed = false
+            root.backspaceRepeatActive = false
             if (root.voiceHoldActive) {
                 // Releasing the held space ends the take and sends it off
                 // to whisper-server for transcription.
@@ -413,12 +441,19 @@ Item {
                 KeyboardController.commitKeyAt(root.keyName, root.upper, root.displayLabel)
             else
                 KeyboardController.commitText(root.displayLabel)
-            if (n === "space")
+            if (n === "space") {
+                // Count the quick taps of an arming sequence (tap, tap, hold)
+                // so the voice hold can eat the spaces they typed.
+                root.voiceGestureSpaces = (Date.now() - root.lastSpaceTap) < root.doubleTapWindow
+                                          ? root.voiceGestureSpaces + 1 : 1
                 root.lastSpaceTap = Date.now()
+            }
             root.spaceSecondPress = false
         }
         onCanceled: {
             root.pressed = false
+            root.backspaceRepeatActive = false
+            root.voiceGestureSpaces = 0
             if (root.voiceHoldActive) {
                 root.voiceHoldActive = false
                 KeyboardController.cancelVoiceInput()
