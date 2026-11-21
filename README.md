@@ -80,7 +80,7 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
   (`-vp 200` pads speech by 200 ms instead of 30, so word edges aren't
   clipped); a microphone, obviously
 - *optional:* **[fcitx5-commit](https://github.com/Vendetta1871/fcitx5-commit)**
-  (AUR `fcitx5-commit-git`) — lets skvirt insert dictated text, pinyin
+  (AUR `fcitx5-commit`, or `fcitx5-commit-git` with `skvirt-git`) — lets skvirt insert dictated text, pinyin
   candidates and characters the layout has no key for as one input-method
   commit instead of key taps: instant and layout-independent. Without it
   skvirt types them (slower; unicode entry for the rest)
