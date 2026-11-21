@@ -4,6 +4,10 @@
       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
     <kcfgfile name="skvirtrc"/>
     <group name="General">
+        <entry name="autoShowOnFocus" type="Bool">
+            <label>Show automatically (on text field activation)</label>
+            <default>false</default>
+        </entry>
         <entry name="showOnlyInTabletMode" type="Bool">
             <label>Show only in tablet mode</label>
             <default>false</default>

@@ -116,8 +116,9 @@ bool InputMonitor::openDevice(const QString &path)
     }
 
     auto *notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+    const QString sysName = path.section(QLatin1Char('/'), -1);
     connect(notifier, &QSocketNotifier::activated, this,
-            [this, fd, kind]() { onReadable(fd, kind); });
+            [this, fd, kind, sysName]() { onReadable(fd, kind, sysName); });
     m_devs.push_back({fd, kind, notifier, path});
     if (kind == Touch)
         m_hasTouch = true;
@@ -171,7 +172,7 @@ void InputMonitor::closeDevice(int fd)
     }
 }
 
-void InputMonitor::onReadable(int fd, Kind kind)
+void InputMonitor::onReadable(int fd, Kind kind, const QString &sysName)
 {
     input_event evs[64];
     bool touch = false, pointer = false, tablet = false, tabletSeen = false;
@@ -228,7 +229,7 @@ void InputMonitor::onReadable(int fd, Kind kind)
         emit tabletModeChanged(tablet);
     }
     if (touch)
-        emit touchActivity();
+        emit touchActivity(sysName);
     if (pointer)
         emit pointerActivity();
 }

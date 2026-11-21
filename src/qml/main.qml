@@ -26,12 +26,12 @@ KeyboardWindow {
         Component.onCompleted: root.updateKeyboardHeight(desiredHeight)
     }
 
-    // Visibility is driven by fcitx5 (Show/HideVirtualKeyboard) via the controller.
+    // Visibility (and the screen to show on) is decided by the controller.
     Connections {
         target: KeyboardController
         function onPanelVisibleChanged() {
             if (KeyboardController.panelVisible)
-                root.showPanel()
+                root.showPanel(KeyboardController.panelScreen)
             else
                 root.hidePanel()
         }

@@ -77,10 +77,35 @@ void KeyboardWindow::updateExclusiveZone(int heightPx)
         lsw->setExclusiveZone(heightPx);
 }
 
-void KeyboardWindow::showPanel()
+void KeyboardWindow::placeOnScreen(const QString &screenName)
+{
+    QScreen *target = nullptr;
+    const auto screens = QGuiApplication::screens();
+    for (QScreen *s : screens) {
+        if (s->name() == screenName) {
+            target = s;
+            break;
+        }
+    }
+    auto *lsw = LayerShellQt::Window::get(this);
+    if (target) {
+        // The QWindow screen too, not only the layer surface output: QML
+        // sizes the panel from Screen.height, which follows the window.
+        setScreen(target);
+        if (lsw)
+            lsw->setScreen(target);
+    } else if (lsw) {
+        lsw->setWantsToBeOnActiveScreen(true);
+    }
+}
+
+void KeyboardWindow::showPanel(const QString &screenName)
 {
     if (isVisible())
         return;
+    // The layer surface binds its output when it is created, i.e. on every
+    // map (hiding destroys it), so a hidden panel can move freely.
+    placeOnScreen(screenName);
     setVisible(true);
     updateExclusiveZone(height());
 }

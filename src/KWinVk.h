@@ -16,6 +16,14 @@ public:
 
     bool textInputFocused() const { return m_focused; }
 
+    // Output (connector name, e.g. "eDP-1") KWin maps the evdev touch/tablet
+    // device sysName ("event11") to; empty when it is left unmapped (KWin
+    // then picks the internal panel itself) or KWin can't be asked.
+    QString deviceOutputName(const QString &sysName) const;
+    // KWin's active output — the one under the pointer with default
+    // settings; empty if KWin can't be asked.
+    QString activeOutputName() const;
+
 signals:
     void textInputFocusChanged(bool focused);
 

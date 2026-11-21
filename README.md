@@ -25,7 +25,12 @@ fcitx5 tray icon keeps working. fcitx5 never even knows skvirt exists.
   has its indicator light.
 - **Touch-driven, Windows-like:** touching a text field with a finger/pen pops
   the keyboard up; reaching for the mouse/touchpad/trackpoint, losing the field,
-  or pressing the ▼ button hides it. A mouse click never summons it.
+  or pressing the ▼ button hides it. A mouse click never summons it — unless
+  *show automatically* is turned on, then any activated field does.
+- **Multi-monitor aware:** the keyboard appears on the screen where the event
+  that summoned it happened — the touched screen for a finger/pen, the
+  pointer's screen for a mouse click or the tray icon — not on whichever
+  output the compositor currently considers active.
 - **Coexists with fcitx5:** input goes through fcitx5, so layouts, composing and
   CJK candidate selection all work normally.
 - **Autosuggestion bar:** word completions above the key rows — Hunspell
@@ -113,6 +118,10 @@ Settings (or run it from the build tree:
 `QT_PLUGIN_PATH=build/bin kcmshell6 kcm_skvirt`). It edits
 `~/.config/skvirtrc`; a running skvirt picks changes up live:
 
+- **Show automatically (on text field activation)** — auto-show on any
+  activated field, clicked with the mouse or reached with Tab, not only on a
+  touch (default off). The panel then stays up while the field keeps focus, so *hide when
+  mouse is moved* does not apply.
 - **Show only in tablet mode** — auto-show only while the convertible's
   `SW_TABLET_MODE` switch is engaged.
 - **Hide when mouse is moved** — reaching for a pointer device dismisses the
@@ -145,9 +154,13 @@ Settings (or run it from the build tree:
   properties (`INPUT_PROP_DIRECT` = touchscreen vs pointer devices) to tell
   finger/pen from mouse; also tracks the `SW_TABLET_MODE` switch.
 - `KWinVk` — asks KWin (`org.kde.kwin.VirtualKeyboard`) whether the focused
-  window accepts text input, to know when there is a field to type into.
+  window accepts text input, to know when there is a field to type into; and
+  where to show the panel: which output a touch/pen device is mapped to
+  (`org.kde.KWin.InputDevice.outputName`, the internal panel when unmapped)
+  and the active output for pointer-driven shows.
 - `KeyboardWindow` — the layer-shell panel; marked
   `Qt::WindowDoesNotAcceptFocus` so mapping it never pulls focus off the app.
+  Its layer surface is bound to the target output on every map.
 - `SuggestionEngine` — word completions: Hunspell dictionaries for keyboard
   layouts, libime (`PinyinIME` + `sc.dict` + `zh_CN.lm`) for pinyin IMs.
 - `LayoutGenerator` — parses the active layout's xkb symbols into the four QML
@@ -177,6 +190,8 @@ Settings (or run it from the build tree:
   history (the candidate is injected as Unicode after cancelling the preedit).
 - If focus moves to another text-capable window while in touch mode, the
   keyboard may stay up until you use the mouse.
+- A panel that is already up stays on its screen; it moves to another one
+  only on its next show.
 
 ## License
 

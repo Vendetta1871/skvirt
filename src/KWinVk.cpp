@@ -2,7 +2,9 @@
 
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusInterface>
+#include <QtDBus/QDBusMessage>
 #include <QtDBus/QDBusReply>
+#include <QtDBus/QDBusVariant>
 #include <QDebug>
 
 static const char *kService = "org.kde.KWin";
@@ -40,4 +42,31 @@ void KWinVk::refresh()
     m_focused = focused;
     qDebug() << "skvirt: text-input focus" << (focused ? "gained" : "lost");
     emit textInputFocusChanged(m_focused);
+}
+
+// Both lookups run only when the panel is about to be shown (or once per
+// device), so a short blocking call is fine; the timeout keeps a hung KWin
+// from freezing the panel.
+static constexpr int kCallTimeoutMs = 300;
+
+QString KWinVk::deviceOutputName(const QString &sysName) const
+{
+    auto msg = QDBusMessage::createMethodCall(
+        QString::fromLatin1(kService),
+        QStringLiteral("/org/kde/KWin/InputDevice/") + sysName,
+        QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("Get"));
+    msg << QStringLiteral("org.kde.KWin.InputDevice") << QStringLiteral("outputName");
+    const QDBusReply<QDBusVariant> reply =
+        QDBusConnection::sessionBus().call(msg, QDBus::Block, kCallTimeoutMs);
+    return reply.isValid() ? reply.value().variant().toString() : QString();
+}
+
+QString KWinVk::activeOutputName() const
+{
+    const auto msg = QDBusMessage::createMethodCall(
+        QString::fromLatin1(kService), QStringLiteral("/KWin"),
+        QStringLiteral("org.kde.KWin"), QStringLiteral("activeOutputName"));
+    const QDBusReply<QString> reply =
+        QDBusConnection::sessionBus().call(msg, QDBus::Block, kCallTimeoutMs);
+    return reply.isValid() ? reply.value() : QString();
 }

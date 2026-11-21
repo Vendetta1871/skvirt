@@ -28,6 +28,10 @@ class KeyboardController : public QObject
     QML_SINGLETON
 
     Q_PROPERTY(bool panelVisible READ panelVisible NOTIFY panelVisibleChanged)
+    // Output the panel is (to be) shown on — the screen of the event that
+    // summoned it; empty lets the compositor choose. Set before
+    // panelVisibleChanged fires for a show.
+    Q_PROPERTY(QString panelScreen READ panelScreen NOTIFY panelVisibleChanged)
     Q_PROPERTY(bool shiftActive READ shiftActive NOTIFY shiftActiveChanged)
     Q_PROPERTY(bool capsLock READ capsLock NOTIFY capsLockChanged)
     Q_PROPERTY(bool symbolMode READ symbolMode NOTIFY symbolModeChanged)
@@ -56,6 +60,7 @@ public:
     ~KeyboardController() override;
 
     bool panelVisible() const { return m_visible; }
+    QString panelScreen() const { return m_panelScreen; }
     bool shiftActive() const { return m_shift; }
     bool capsLock() const { return m_capsLock; }
     bool symbolMode() const { return m_symbolMode; }
@@ -136,10 +141,12 @@ private:
     // Auto show/hide decision engine (Windows-like touch behaviour).
     void showKeyboard();   // map + ensure fcitx VK backend loaded for key routing
     void hideKeyboard();   // unmap + tell fcitx
-    void onTouchActivity();
+    void onTouchActivity(const QString &sysName);
     void onPointerActivity();
     void onTabletModeChanged(bool tabletMode);
     void onFieldFocusChanged(bool focused);
+    // Output a touch/pen device sits on, as KWin maps it (cached per device).
+    QString screenForTouchDevice(const QString &sysName);
 
     std::unique_ptr<UinputKeyboard> m_kbd;
     std::unique_ptr<InputMonitor> m_input;
@@ -176,4 +183,14 @@ private:
     bool m_touchMode = false;    // most recent interaction was a finger/pen, not a mouse
     bool m_fieldFocused = false; // KWin reports an editable client is focused
     bool m_tabletMode = false;   // SW_TABLET_MODE switch position from InputMonitor
+
+    // Where the panel appears: on the screen of the event that summoned it,
+    // not on KWin's active output, which follows the pointer — a finger on
+    // the laptop panel must not pop the keyboard onto the monitor the mouse
+    // happens to rest on. m_eventScreen is the screen of the latest
+    // finger/pen contact; a pointer event clears it, and a show then asks
+    // KWin for its active output (the pointer's screen) instead.
+    QString m_eventScreen;
+    QString m_panelScreen;                      // screen of the current/last show
+    QHash<QString, QString> m_touchDeviceScreens; // evdev sysName -> output name
 };

@@ -25,7 +25,9 @@ public:
     bool tabletMode() const { return m_tabletMode; }
 
 signals:
-    void touchActivity();    // finger/pen went down on a direct (touchscreen) device
+    // Finger/pen went down on a direct (touchscreen/digitizer) device;
+    // sysName is its evdev node name ("event11"), as KWin names it on D-Bus.
+    void touchActivity(const QString &sysName);
     void pointerActivity();  // mouse/touchpad/trackpoint moved or clicked
     void tabletModeChanged(bool tabletMode);  // SW_TABLET_MODE switch flipped
 
@@ -36,7 +38,7 @@ private:
     void openDevices();
     bool openDevice(const QString &path);
     void closeDevice(int fd);
-    void onReadable(int fd, Kind kind);
+    void onReadable(int fd, Kind kind, const QString &sysName);
     bool isMonitored(const QString &path) const;
 
     QVector<Dev> m_devs;

@@ -7,8 +7,21 @@ Kirigami.FormLayout {
     id: root
 
     QQC2.CheckBox {
-        id: tabletModeCheck
+        id: autoShowOnFocusCheck
         Kirigami.FormData.label: i18n("Behaviour:")
+        text: i18n("Show automatically (on text field activation)")
+        checked: kcm.settings.autoShowOnFocus
+        onToggled: kcm.settings.autoShowOnFocus = checked
+    }
+
+    QQC2.Label {
+        text: i18n("Mouse clicks and Tab count too. Off: only a finger or pen touch shows it.")
+        font: Kirigami.Theme.smallFont
+        opacity: 0.7
+    }
+
+    QQC2.CheckBox {
+        id: tabletModeCheck
         text: i18n("Show only in tablet mode")
         checked: kcm.settings.showOnlyInTabletMode
         onToggled: kcm.settings.showOnlyInTabletMode = checked
@@ -17,6 +30,8 @@ Kirigami.FormLayout {
     QQC2.CheckBox {
         id: hideOnMouseMoveCheck
         text: i18n("Hide when mouse is moved")
+        // With auto-show on focus the panel follows the field instead.
+        enabled: !autoShowOnFocusCheck.checked
         checked: kcm.settings.hideOnMouseMove
         onToggled: kcm.settings.hideOnMouseMove = checked
     }

@@ -8,8 +8,10 @@
 
 #include "skvirt.h"  // generated SkvirtSettings (kconfig_add_kcfg_files)
 
+#include <QGuiApplication>
 #include <QHash>
 #include <QDebug>
+#include <QScreen>
 #include <QTimer>
 
 // Map a printable character to the US-layout physical (evdev) key that
@@ -162,6 +164,12 @@ void KeyboardController::initBackend()
 
     m_fieldFocused = m_kwin->textInputFocused();
     m_tabletMode = m_input->tabletMode();
+
+    // Device-to-output mappings are only valid for the current set of
+    // outputs (KWin re-maps unmapped touchscreens when outputs come and go).
+    const auto dropScreenCache = [this] { m_touchDeviceScreens.clear(); };
+    connect(qGuiApp, &QGuiApplication::screenAdded, this, dropScreenCache);
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this, dropScreenCache);
 }
 
 void KeyboardController::setVisible(bool v)
@@ -169,6 +177,16 @@ void KeyboardController::setVisible(bool v)
     if (m_visible == v)
         return;
     m_visible = v;
+    if (v) {
+        // The screen of the event behind this show: the touched screen for a
+        // finger/pen, else KWin's active output (where the pointer is).
+        m_panelScreen = m_eventScreen;
+        if (m_panelScreen.isEmpty() && m_kwin)
+            m_panelScreen = m_kwin->activeOutputName();
+        qDebug() << "skvirt: showing on" << (m_panelScreen.isEmpty()
+                                                 ? QStringLiteral("the compositor's choice")
+                                                 : m_panelScreen);
+    }
     if (m_voice) {
         if (v)
             m_voice->checkAvailability();  // re-probe: the server may have (re)started
@@ -186,7 +204,7 @@ void KeyboardController::showKeyboard()
         return;
     if (SkvirtSettings::showOnlyInTabletMode() && !m_tabletMode)
         return;  // setting gates auto-show to tablet (convertible) mode
-    qDebug() << "skvirt: SHOW (touch + field focused)";
+    qDebug() << "skvirt: SHOW (field focused)";
     setVisible(true);
 }
 
@@ -198,10 +216,11 @@ void KeyboardController::hideKeyboard()
     setVisible(false);
 }
 
-void KeyboardController::onTouchActivity()
+void KeyboardController::onTouchActivity(const QString &sysName)
 {
     // Finger/pen: enter touch mode and pop the keyboard if there's a field.
     m_touchMode = true;
+    m_eventScreen = screenForTouchDevice(sysName);
     if (m_fieldFocused)
         showKeyboard();
 }
@@ -211,9 +230,39 @@ void KeyboardController::onPointerActivity()
     // The user reached for the mouse/touchpad. We always leave touch mode —
     // the next finger tap must re-trigger the show path — but the panel only
     // gets out of the way when the user asked for that (hideOnMouseMove).
+    // With auto-show on focus the panel follows the field instead: hiding on
+    // every mouse move would undo a show the mouse click itself caused.
     m_touchMode = false;
-    if (SkvirtSettings::hideOnMouseMove())
+    m_eventScreen.clear();  // the next show goes where the pointer is
+    if (SkvirtSettings::hideOnMouseMove() && !SkvirtSettings::autoShowOnFocus())
         hideKeyboard();
+}
+
+QString KeyboardController::screenForTouchDevice(const QString &sysName)
+{
+    const auto cached = m_touchDeviceScreens.constFind(sysName);
+    if (cached != m_touchDeviceScreens.constEnd())
+        return *cached;
+
+    // An explicit mapping (System Settings → Touchscreen/Drawing Tablet)...
+    QString output = m_kwin ? m_kwin->deviceOutputName(sysName) : QString();
+    // ...else KWin's own default for an unmapped one: the built-in panel.
+    if (output.isEmpty()) {
+        const auto screens = QGuiApplication::screens();
+        for (const QScreen *s : screens) {
+            const QString name = s->name();
+            if (name.startsWith(QLatin1String("eDP")) || name.startsWith(QLatin1String("LVDS"))
+                || name.startsWith(QLatin1String("DSI"))) {
+                output = name;
+                break;
+            }
+        }
+    }
+    // Still empty (no internal panel enabled): the active output decides.
+    qDebug() << "skvirt: touch device" << sysName << "is on"
+             << (output.isEmpty() ? QStringLiteral("an unknown output") : output);
+    m_touchDeviceScreens.insert(sysName, output);
+    return output;
 }
 
 void KeyboardController::onTabletModeChanged(bool tabletMode)
@@ -223,7 +272,7 @@ void KeyboardController::onTabletModeChanged(bool tabletMode)
         return;  // tablet mode only matters to the engine when gated on it
     if (!tabletMode)
         hideKeyboard();                  // folded back to laptop: get out of the way
-    else if (m_touchMode && m_fieldFocused)
+    else if ((m_touchMode || SkvirtSettings::autoShowOnFocus()) && m_fieldFocused)
         showKeyboard();                  // flipped to tablet with a field ready: pop up
 }
 
@@ -232,8 +281,8 @@ void KeyboardController::onFieldFocusChanged(bool focused)
     m_fieldFocused = focused;
     if (!focused)
         hideKeyboard();           // field/app went away
-    else if (m_touchMode)
-        showKeyboard();           // tapped into a field
+    else if (m_touchMode || SkvirtSettings::autoShowOnFocus())
+        showKeyboard();           // tapped into a field (or focused it any way)
 }
 
 void KeyboardController::commitText(const QString &text)
